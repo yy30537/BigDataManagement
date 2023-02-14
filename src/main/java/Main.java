@@ -75,9 +75,25 @@ public class Main {
     
     }
 
+
     private static void q2(JavaSparkContext sparkContext, Dataset dataset) {
-        // TODO: Implement Q2 here
+        // use SparkSQL
+        // find triples of vectors <X,Y,Z>
+        // with aggregate variance at most τ
+        // τ = {20,50,310,360,410}
+        dataset.createOrReplaceTempView("table"); 
+
+        Dataset<Row> result = dataset.sqlContext().sql("SELECT * FROM table");
+        
+        for (Row row : result.collectAsList()) {
+            for (int i = 0; i < row.length(); i++) {
+                System.out.print(row.getAs(i) + " ");
+            }
+            System.out.println();
+        }
+        
     }
+    
     private static void q3(JavaSparkContext sparkContext, JavaRDD rdd) {
         // TODO: Implement Q3 here
     }
