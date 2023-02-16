@@ -71,6 +71,8 @@ public class Main {
             System.out.println("Value: " + Arrays.toString(pair._2()));
         }
 
+        // TESTING
+
         return vectors;
     
     }
