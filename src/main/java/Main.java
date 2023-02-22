@@ -39,7 +39,13 @@ public class Main {
         Dataset<Row> df = sparkSession.read()
         .option("inferSchema", "true")    
         .csv(vectorsFilePath);
+        
+        System.out.println("Excerpt of the dataframe content:");
         df.show(10);
+        
+        System.out.println("Dataframe's schema:");
+        df.printSchema();
+        
         return df;
 
     }
@@ -87,7 +93,7 @@ public class Main {
 
         Dataset<Row> result = dataset.sqlContext().sql("SELECT * FROM table");
         
-        for (Row row : result.collectAsList()) {
+        for (Row row : result.collectAsList()) { // Is this slow? Because this will collect every dataframe from all workers to the driver!
             for (int i = 0; i < row.length(); i++) {
                 System.out.print(row.getAs(i) + " ");
             }
@@ -109,6 +115,7 @@ public class Main {
     public static void main(String[] args) {
 
         boolean onServer = false; // TODO: Set this to true if and only if building a JAR to run on the server
+        //boolean onServer = true; // TODO: Set this to true if and only if building a JAR to run on the server
 
         JavaSparkContext sparkContext = getSparkContext(onServer);
 
