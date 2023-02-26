@@ -71,13 +71,12 @@ public class Main {
         // });
 
 
+        // Only for testing (can be removed or comment)
         List<Tuple2<String, int[]>> list = vectors.take(10);
         for (Tuple2<String, int[]> pair : list) {
             System.out.println("Key: " + pair._1());
             System.out.println("Value: " + Arrays.toString(pair._2()));
         }
-
-        // TESTING
 
         return vectors;
     
@@ -87,19 +86,21 @@ public class Main {
     private static void q2(JavaSparkContext sparkContext, Dataset dataset) {
         // use SparkSQL
         // find triples of vectors <X,Y,Z>
-        // with aggregate variance at most τ
+        // with aggregate variance at most aggregate variance τ
         // τ = {20,50,310,360,410}
+        
         dataset.createOrReplaceTempView("table"); 
 
         Dataset<Row> result = dataset.sqlContext().sql("SELECT * FROM table");
         
+        System.out.println("Print dataset");
+
         for (Row row : result.collectAsList()) { // Is this slow? Because this will collect every dataframe from all workers to the driver!
             for (int i = 0; i < row.length(); i++) {
                 System.out.print(row.getAs(i) + " ");
             }
             System.out.println();
         }
-        
     }
     
     private static void q3(JavaSparkContext sparkContext, JavaRDD rdd) {
@@ -125,7 +126,7 @@ public class Main {
 
         
 
-        // q2(sparkContext, dataset);
+        q2(sparkContext, dataset);
 
         // q3(sparkContext, rdd);
 
