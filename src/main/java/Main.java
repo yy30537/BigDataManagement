@@ -6,15 +6,20 @@ import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
 
-import java.util.List;
+import java.util.*;
 import scala.Tuple2;
 import org.apache.spark.api.java.JavaPairRDD;
 import java.util.Arrays;
+import org.apache.spark.sql.types.*;
+import static org.apache.spark.sql.functions.col;
+import static org.apache.spark.sql.functions.split;
+
+
+
 
 
 public class Main {
 
-    
     private static JavaSparkContext getSparkContext(boolean onServer) {
         SparkConf sparkConf = new SparkConf().setAppName("2AMD15");
 
@@ -37,9 +42,11 @@ public class Main {
         // TODO: Implement Q1a here by creating a Dataset of DataFrame out of the file at {@code vectorsFilePath}.
 
         Dataset<Row> df = sparkSession.read()
-        .option("inferSchema", "true")    
-        .csv(vectorsFilePath);
-        
+            .option("inferSchema", "true")    
+            .csv(vectorsFilePath)
+            .withColumn("_c1_array", split(col("_c1"), ";").cast(DataTypes.createArrayType(DataTypes.IntegerType)))
+            .drop("_c1");
+
         System.out.println("Excerpt of the dataframe content:");
         df.show(10);
         
@@ -83,24 +90,78 @@ public class Main {
     }
 
 
+
+    /* 
+        Sudo code
+
+        ===== iterativly select triples of vectors from Dataset
+            X Y Z                
+
+        DXNT 42;45;51;41;17
+        [key1] x1;x2  ...  xi
+        [key2] y1;y2  ...  yi
+        [key3] z1;z2  ...  zi
+
+
+        (For i = 1 to 250)
+            1. Calculate Aggregate
+            A = {x1+y1+z1, x2+y2+z2 ... xi+yi+zi}
+
+            2. Calculate Variance 
+            int l = A.length;
+            i = (1...l)
+            sum = A[1]^2 + A[2]^2 +... + A[i]^2
+                = (x1+y1+z1)^2 + (x2+y2+z2)^2 +... + (xi+yi+zi)^2
+
+            j = (1...l)
+            mu = (A[1] + A[2] +... + A[j]) / l
+            mu = [(x1+y1+z1) + (x2+y2+z2) + ... + (xi+yi+zi)] / l
+
+            V = (1/l)*sum - mu^2
+            τ = {20,50,310,360,410}
+            V ? τ
+
+        */
     private static void q2(JavaSparkContext sparkContext, Dataset dataset) {
-        // use SparkSQL
-        // find triples of vectors <X,Y,Z>
-        // with aggregate variance at most aggregate variance τ
-        // τ = {20,50,310,360,410}
         
-        dataset.createOrReplaceTempView("table"); 
+        //int tau = 20;
 
-        Dataset<Row> result = dataset.sqlContext().sql("SELECT * FROM table");
+        SparkSession sparkSession = SparkSession.builder().appName("example").getOrCreate();
+        dataset.createOrReplaceTempView("vectors");
+
         
-        System.out.println("Print dataset");
+        // join the vectors table with itself three times by distinct keys, get rid of duplicates
+        // thus finding the distinct triplets
+        Dataset<Row> x = sparkSession.sql("SELECT _c0 AS x_key, _c1_array AS x_array FROM vectors");
+        Dataset<Row> y = sparkSession.sql("SELECT _c0 AS y_key, _c1_array AS y_array FROM vectors");
+        Dataset<Row> z = sparkSession.sql("SELECT _c0 AS z_key, _c1_array AS z_array FROM vectors");
 
-        for (Row row : result.collectAsList()) { // Is this slow? Because this will collect every dataframe from all workers to the driver!
-            for (int i = 0; i < row.length(); i++) {
-                System.out.print(row.getAs(i) + " ");
-            }
-            System.out.println();
+        Dataset<Row> distinct_triples = x.crossJoin(y).crossJoin(z)
+        .where("x_key != y_key AND x_key != z_key AND y_key != z_key") 
+        .selectExpr("x_array", "y_array", "z_array")
+        .distinct();
+
+        distinct_triples.createOrReplaceTempView("triplets");
+        
+    
+        // this way this program runs but is very slow
+        for (int i = 1; i <= 250; i++) {
+            // 1 aggregate
+            String SQL_Query = String.format("SELECT (x_array[%d] + y_array[%d] + z_array[%d]) AS A FROM triplets", i, i, i);
+            Dataset<Row> A = sparkSession.sql(SQL_Query);
+            A.show();
+
+            // todo
+            // 2 calculate variance
+            // 3 if V <= τ collect
+
         }
+
+
+
+        
+
+
     }
     
     private static void q3(JavaSparkContext sparkContext, JavaRDD rdd) {
@@ -110,6 +171,8 @@ public class Main {
         // TODO: Implement Q4 here
     }
     
+
+
 
     // Main method which initializes a Spark context and runs the code for each question.
     // To skip executing a question while developing a solution, simply comment out the corresponding method call.
@@ -122,7 +185,7 @@ public class Main {
 
         Dataset dataset = q1a(sparkContext, onServer);
 
-        JavaPairRDD rdd = q1b(sparkContext, onServer);
+        //JavaPairRDD rdd = q1b(sparkContext, onServer);
 
         
 
@@ -138,3 +201,9 @@ public class Main {
 
     }
 }
+
+
+
+
+
+
