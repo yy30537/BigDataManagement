@@ -13,6 +13,7 @@ import java.util.Arrays;
 import org.apache.spark.sql.types.*;
 import static org.apache.spark.sql.functions.col;
 import static org.apache.spark.sql.functions.split;
+import static org.apache.spark.sql.functions.sum;
 
 
 
@@ -48,10 +49,10 @@ public class Main {
             .drop("_c1");
 
         System.out.println("Excerpt of the dataframe content:");
-        df.show(10);
+        //df.show(10);
         
         System.out.println("Dataframe's schema:");
-        df.printSchema();
+        //df.printSchema();
         
         return df;
 
@@ -72,18 +73,11 @@ public class Main {
         });
 
 
-        // vectors.foreach(pair -> {
+        // List<Tuple2<String, int[]>> list = vectors.take(10);
+        // for (Tuple2<String, int[]> pair : list) {
         //     System.out.println("Key: " + pair._1());
         //     System.out.println("Value: " + Arrays.toString(pair._2()));
-        // });
-
-
-        // Only for testing (can be removed or comment)
-        List<Tuple2<String, int[]>> list = vectors.take(10);
-        for (Tuple2<String, int[]> pair : list) {
-            System.out.println("Key: " + pair._1());
-            System.out.println("Value: " + Arrays.toString(pair._2()));
-        }
+        // }
 
         return vectors;
     
@@ -122,46 +116,46 @@ public class Main {
             V ? τ
 
         */
-    private static void q2(JavaSparkContext sparkContext, Dataset dataset) {
-        
+    private static void q2(JavaSparkContext sparkContext, Dataset dataset) { 
         //int tau = 20;
-
         SparkSession sparkSession = SparkSession.builder().appName("example").getOrCreate();
         dataset.createOrReplaceTempView("vectors");
 
-        
         // join the vectors table with itself three times by distinct keys, get rid of duplicates
         // thus finding the distinct triplets
         Dataset<Row> x = sparkSession.sql("SELECT _c0 AS x_key, _c1_array AS x_array FROM vectors");
         Dataset<Row> y = sparkSession.sql("SELECT _c0 AS y_key, _c1_array AS y_array FROM vectors");
         Dataset<Row> z = sparkSession.sql("SELECT _c0 AS z_key, _c1_array AS z_array FROM vectors");
-
+        
         Dataset<Row> distinct_triples = x.crossJoin(y).crossJoin(z)
         .where("x_key != y_key AND x_key != z_key AND y_key != z_key") 
         .selectExpr("x_array", "y_array", "z_array")
         .distinct();
-
+        
         distinct_triples.createOrReplaceTempView("triplets");
-        
-    
-        // this way this program runs but is very slow
-        for (int i = 1; i <= 250; i++) {
-            // 1 aggregate
-            String SQL_Query = String.format("SELECT (x_array[%d] + y_array[%d] + z_array[%d]) AS A FROM triplets", i, i, i);
-            Dataset<Row> A = sparkSession.sql(SQL_Query);
-            A.show();
 
-            // todo
-            // 2 calculate variance
-            // 3 if V <= τ collect
+        long count = distinct_triples.count();
 
+        for (int i = 0; i <= 0; i++) {
+
+            String SQL_Aggregate = String.format(
+                "SELECT (x_array[%d] + y_array[%d] + z_array[%d]) AS A FROM triplets", i, i, i);
+            
+            String SQL_Square = String.format(
+                "SELECT pow((x_array[%d] + y_array[%d] + z_array[%d]), 2) AS A_2 FROM triplets", i, i, i);
+
+            Dataset<Row> A = sparkSession.sql(SQL_Aggregate);
+            Dataset<Row> A_2 = sparkSession.sql(SQL_Square);
+
+            double sum = ((Number)A_2.agg(sum(col("A_2"))).head().get(0)).doubleValue();
+            double mu = ((Number)A.agg(sum(col("A"))).head().getDouble(0)).doubleValue();
+            //double l = A.count();
+            //mu = mu / l;
+            //double V = (1 / l) * sum - mu * mu;
+
+            System.out.println(sum);
+            System.out.println(mu);
         }
-
-
-
-        
-
-
     }
     
     private static void q3(JavaSparkContext sparkContext, JavaRDD rdd) {
