@@ -51,10 +51,18 @@ public class Main {
             .withColumn("_c1_array", split(col("_c1"), ";").cast(DataTypes.createArrayType(DataTypes.IntegerType)))
             .drop("_c1");
 
+<<<<<<< Updated upstream
         System.out.println("dataframe content:");
         df.show(10);
         System.out.println("Dataframe's schema:");
         df.printSchema();
+=======
+        //System.out.println("Excerpt of the dataframe content:");
+        //df.show(10);
+        
+        // System.out.println("Dataframe's schema:");
+        //df.printSchema();
+>>>>>>> Stashed changes
         
         return df;
     }
@@ -82,18 +90,110 @@ public class Main {
         SparkSession sparkSession = SparkSession.builder().appName("example").getOrCreate();
         dataset.createOrReplaceTempView("vectors");
 
+<<<<<<< Updated upstream
         //System.out.println(dataset.count());
+=======
+        String query = "";
+
+
+
+
+
+
+
+
+
+
+
+
+
+        // join the vectors table with itself three times by distinct keys, get rid of duplicates
+        // thus finding the distinct triplets
+        Dataset<Row> x = sparkSession.sql("SELECT _c0 AS x_key, _c1_array AS x_array FROM vectors");
+        Dataset<Row> y = sparkSession.sql("SELECT _c0 AS y_key, _c1_array AS y_array FROM vectors");
+        Dataset<Row> z = sparkSession.sql("SELECT _c0 AS z_key, _c1_array AS z_array FROM vectors");
+        
+        x.show();
+        y.show();
+        z.show();
+
+        Dataset<Row> distinct_triples = x.crossJoin(y).crossJoin(z)
+        .where("x_key != y_key AND x_key != z_key AND y_key != z_key") 
+        .selectExpr("x_array", "y_array", "z_array")
+        .distinct();
+
+        // broadcast variables in spark
+        // do cross joins using broadcast variables (spread accross workers)
+
+        distinct_triples.show();
+        
+        distinct_triples.createOrReplaceTempView("triplets");
+>>>>>>> Stashed changes
 
         String query_getTriples = "SELECT a._c0 AS xid, b._c0 AS yid, c._c0 AS zid, a._c1_array AS x, b._c1_array AS y, c._c1_array AS z " +
         "FROM vectors a, vectors b, vectors c " +
         "WHERE a._c0 < b._c0 AND b._c0 < c._c0";
 
+<<<<<<< Updated upstream
 
         Dataset<Row> triples = sparkSession.sql(query_getTriples);
         triples.createOrReplaceTempView("triples");
 
         System.out.println("Number of distinct triples: " + triples.count());
         triples.show();
+=======
+        System.out.println(count);
+
+
+
+
+        
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+        // for (int i = 0; i <= count; i++) {
+
+
+
+
+        //     String SQL_Aggregate = String.format(
+        //         "SELECT (x_array[%d] + y_array[%d] + z_array[%d]) AS A FROM triplets", i, i, i);
+        
+        //     String SQL_Square = String.format(
+        //         "SELECT pow((x_array[%d] + y_array[%d] + z_array[%d]), 2) AS A_2 FROM triplets", i, i, i);
+
+        //     Dataset<Row> A = sparkSession.sql(SQL_Aggregate);
+        //     Dataset<Row> A_2 = sparkSession.sql(SQL_Square);
+
+        //     A.explain();
+
+        //     double sum = (A_2.agg(sum(col("A_2"))).head().getDouble(0));
+        //     //double mu = ((Number)A.agg(sum(col("A"))).head().getDouble(0)).doubleValue();
+        //     //double l = A.count();
+        //     //mu = mu / l;
+        //     //double V = (1 / l) * sum - mu * mu;
+
+        //     System.out.println(sum);
+        //     //System.out.println(mu);
+        // }
+    }
+>>>>>>> Stashed changes
     
         String query_aggregate = ("SELECT " +
                     "SUM(element_at(x, i) + element_at(y, i) + element_at(z, i)) AS sum " +
@@ -124,8 +224,8 @@ public class Main {
     // To skip executing a question while developing a solution, simply comment out the corresponding method call.
     public static void main(String[] args) {
 
-        boolean onServer = false; // TODO: Set this to true if and only if building a JAR to run on the server
-        //boolean onServer = true; // TODO: Set this to true if and only if building a JAR to run on the server
+        //boolean onServer = false; // TODO: Set this to true if and only if building a JAR to run on the server
+        boolean onServer = true; // TODO: Set this to true if and only if building a JAR to run on the server
 
         JavaSparkContext sparkContext = getSparkContext(onServer);
 
