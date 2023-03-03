@@ -104,41 +104,6 @@ def q2(spark_context: SparkContext, data_frame: DataFrame):
     # Define the list of taus to be used in the query
     taus = [20, 50, 310, 360, 410]
 
-    # Dictionary to store the number of results and execution time for each tau
-    results = {}
-
-    for tau in taus:
-        start_time = datetime.now()
-
-        # Execute the SQL query with the current value of tau
-        query = f"""
-            SELECT X._c0 AS X, Y._c0 AS Y, Z._c0 AS Z
-            FROM vectors X, vectors Y, vectors Z
-            WHERE X._c0 < Y._c0 AND Y._c0 < Z._c0
-            GROUP BY X._c0, Y._c0, Z._c0
-            HAVING aggregate(
-                CONCAT_WS('', X._c1, Y._c1, Z._c1),
-                (0.0, 0.0, 0),
-                (acc, x) -> (acc._1 + x * x, acc._2 + x, acc._3 + 1),
-                acc -> (acc._1 / acc._3) - (acc._2 / acc._3) * (acc._2 / acc._3)
-            ) <= {tau}
-        """
-
-        result_df = spark_session.sql(query)
-
-        # Count the number of results
-        num_results = result_df.count()
-
-        end_time = datetime.now()
-
-        # Calculate the execution time in seconds
-        execution_time = (end_time - start_time).total_seconds()
-
-        # Store the number of results and execution time for the current tau
-        results[tau] = (num_results, execution_time)
-
-        print(f"tau = {tau}: {num_results} results in {execution_time} seconds")
-
     return
 
 
@@ -149,7 +114,7 @@ def q3(spark_context: SparkContext, rdd: RDD):
     #print("printRDD: ", printRDD[0][0])
     #print("printRDD: ", printRDD[0][1])
 
-    tau = {20, 410}
+    taus = [20, 410]
 
     combinations02 = rdd.cartesian(rdd).cartesian(rdd).map(lambda x: (x[0][0], x[0][1], x[1]))
     #combinations02 = rdd.cartesian(rdd).cartesian(rdd).map(lambda x: (x[0][0], x[0][1], x[1])).filter(lambda x: x[0][0]<x[1][0] and x[1][0]<x[2][0])
