@@ -121,18 +121,15 @@ public class Main {
 
         // Generate SQL query that calculates variance
         String query = String.format(
-            "SELECT ((%s) / %d) - POW(((%s) / %d), 2) AS Variance FROM Aggregate",
-            selectClause, vectorLength, aggClause, vectorLength
+            "SELECT * FROM (SELECT ((%s) / %d) - POW(((%s) / %d), 2) AS Variance FROM Aggregate) WHERE Variance <= %d",
+            selectClause, vectorLength, aggClause, vectorLength, tau
         );
         
 
 
         Dataset<Row> result = sparkSession.sql(query);
         result.show();
-        result.createOrReplaceTempView("Variance");
-        
-        result = sparkSession.sql(String.format("SELECT * FROM Variance WHERE Variance <= %d", tau));
-        result.show();
+
 
 
         // Filter the results based on the Variance column
