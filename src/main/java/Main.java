@@ -142,9 +142,3 @@ public class Main {
         sparkContext.close();
     }
 }
-
-
-
-
-
-
