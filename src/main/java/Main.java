@@ -17,8 +17,6 @@ import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.Column;
 
 
-
-
 public class Main {
 
     private static JavaSparkContext getSparkContext(boolean onServer) {
@@ -49,13 +47,9 @@ public class Main {
             .drop("_c1");
 
         //System.out.println("dataframe content:");
-        //df.show(10);
+        df.show(10);
         //System.out.println("Dataframe's schema:");
         //df.printSchema();
-        System.out.println("dataframe content:");
-        df.show(10);
-        System.out.println("Dataframe's schema:");
-        df.printSchema();
         
         return df;
     }
@@ -103,7 +97,7 @@ public class Main {
         }
         triples = triples.drop("xid", "yid", "zid", "x", "y", "z");
         triples.show();
-
+        System.out.println("Number of triples: " + triples.count());
 
     }
 
