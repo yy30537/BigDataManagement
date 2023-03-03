@@ -100,7 +100,7 @@ public class Main {
         triples = triples.drop("xid", "yid", "zid", "x", "y", "z");
         triples.show();
         triples.createOrReplaceTempView("Aggregate");
-        
+        System.out.println(triples.schema());
 
         String query2 = String.format("SELECT CAST(X2 AS INT) FROM Aggregate LIMIT 1 ; ");
         Dataset<Row> result = sparkSession.sql(query2);
