@@ -75,7 +75,8 @@ public class Main {
 
    
     private static void q2(JavaSparkContext sparkContext, Dataset dataset, int vectorCount, int vectorLength) { 
-        //int tau = 20;
+        int tau = 20;
+
         SparkSession sparkSession = SparkSession.builder().appName("example").getOrCreate();
         dataset.createOrReplaceTempView("vectors");
 
@@ -97,17 +98,48 @@ public class Main {
             Dataset<Row> column = sparkSession.sql(query);
             triples = triples.join(column);
         }
+
+
         triples = triples.drop("xid", "yid", "zid", "x", "y", "z");
-        triples.show();
+        //triples.show();
         triples.createOrReplaceTempView("Aggregate");
-        System.out.println(triples.schema());
+        //System.out.println(triples.schema());
 
-        String query2 = String.format("SELECT CAST(X2 AS INT) FROM Aggregate LIMIT 1 ; ");
-        Dataset<Row> result = sparkSession.sql(query2);
-        result.show();
+        String selectClause = "";
+        String powClause = "";
+        String aggClause = "";
+
+        // Generate the SELECT clause
+        for (int i = 1; i <= vectorLength; i++) {
+            selectClause += String.format("POW(X%d, 2)", i);
+            powClause += String.format("X%d", i);
+            aggClause += String.format("X%d", i);
+            if (i < vectorLength) {
+                selectClause += " + ";
+                powClause += " + ";
+                aggClause += " + ";
+            }
+        }
+
+        // Generate the SQL query
+        String query = String.format(
+            "SELECT ((%s) / %d) - POW(((%s) / %d), 2) AS Variance FROM Aggregate",
+            selectClause, vectorLength, aggClause, vectorLength
+        );
         
+        Dataset<Row> result = sparkSession.sql(query);
+        result.show();
 
+        // Partition the DataFrame based on the Variance column
+        Dataset<Row> partitionedData = result.repartition(col("Variance"));
+        partitionedData.show();
 
+        // // Query the partitioned DataFrame
+        Dataset<Row> countResult = partitionedData.filter(col("Variance").leq(tau));
+        countResult.show();
+
+        long count = countResult.count();
+        System.out.println("Result: " + count);
     }
 
     private static void q3(JavaSparkContext sparkContext, JavaRDD rdd) {
