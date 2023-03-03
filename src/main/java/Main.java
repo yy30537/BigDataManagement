@@ -15,6 +15,8 @@ import static org.apache.spark.sql.functions.split;
 import org.apache.spark.sql.functions;
 import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.Column;
+import java.util.List;
+import java.util.ArrayList;
 
 
 public class Main {
@@ -97,7 +99,14 @@ public class Main {
         }
         triples = triples.drop("xid", "yid", "zid", "x", "y", "z");
         triples.show();
-        System.out.println("Number of triples: " + triples.count());
+        triples.createOrReplaceTempView("Aggregate");
+        
+
+        String query2 = String.format("SELECT CAST(X2 AS INT) FROM Aggregate LIMIT 1 ; ");
+        Dataset<Row> result = sparkSession.sql(query2);
+        result.show();
+        
+
 
     }
 
