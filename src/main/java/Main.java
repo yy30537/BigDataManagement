@@ -6,18 +6,15 @@ import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
 
-import java.util.*;
+
 import scala.Tuple2;
 import org.apache.spark.api.java.JavaPairRDD;
 import java.util.Arrays;
-import org.apache.spark.sql.types.*;
-import org.apache.spark.sql.functions.*;
 import static org.apache.spark.sql.functions.col;
 import static org.apache.spark.sql.functions.split;
-import static org.apache.spark.sql.functions.sum;
-import static org.apache.spark.sql.functions.countDistinct;
-import org.apache.spark.sql.api.java.*;
-
+import org.apache.spark.sql.functions;
+import org.apache.spark.sql.types.DataTypes;
+import org.apache.spark.sql.Column;
 
 
 
@@ -51,10 +48,10 @@ public class Main {
             .withColumn("_c1_array", split(col("_c1"), ";").cast(DataTypes.createArrayType(DataTypes.IntegerType)))
             .drop("_c1");
 
-        System.out.println("dataframe content:");
-        df.show(10);
-        System.out.println("Dataframe's schema:");
-        df.printSchema();
+        //System.out.println("dataframe content:");
+        //df.show(10);
+        //System.out.println("Dataframe's schema:");
+        //df.printSchema();
         
         return df;
     }
@@ -76,38 +73,34 @@ public class Main {
     }
 
 
+    
    
-    private static void q2(JavaSparkContext sparkContext, Dataset dataset) { 
+    private static void q2(JavaSparkContext sparkContext, Dataset dataset, int vectorCount, int vectorLength) { 
         //int tau = 20;
         SparkSession sparkSession = SparkSession.builder().appName("example").getOrCreate();
         dataset.createOrReplaceTempView("vectors");
-
-        //System.out.println(dataset.count());
 
         String query_getTriples = "SELECT a._c0 AS xid, b._c0 AS yid, c._c0 AS zid, a._c1_array AS x, b._c1_array AS y, c._c1_array AS z " +
         "FROM vectors a, vectors b, vectors c " +
         "WHERE a._c0 < b._c0 AND b._c0 < c._c0";
 
-
         Dataset<Row> triples = sparkSession.sql(query_getTriples);
         triples.createOrReplaceTempView("triples");
 
-        System.out.println("Number of distinct triples: " + triples.count());
+        // aggregate
+        for (int i = 1; i <= vectorLength; i++) {
+            String query = String.format("SELECT " +
+                    "(element_at(x, %d) + element_at(y, %d) + element_at(z, %d)) " +
+                    " AS X%d " +
+                    "FROM triples; ", i, i, i, i);
+            Dataset<Row> column = sparkSession.sql(query);
+            triples = triples.join(column);
+        }
+
+        triples = triples.drop("xid", "yid", "zid", "x", "y", "z");
         triples.show();
-    
-        String query_aggregate = ("SELECT " +
-                    "SUM(element_at(x, i) + element_at(y, i) + element_at(z, i)) AS sum " +
-                "FROM (" +
-                    "SELECT x, y, z FROM triples " +
-                ") AS t " +
-                "LATERAL VIEW posexplode(t.x) AS x_exploded(i, x_elem) " +
-                "LATERAL VIEW posexplode(t.y) AS y_exploded(i, y_elem) " +
-                "LATERAL VIEW posexplode(t.z) AS z_exploded(i, z_elem) " +
-                "GROUP BY i");
+        triples.createOrReplaceTempView("X");
 
-
-        Dataset<Row> results = sparkSession.sql(query_aggregate);
-        results.show();
     }
 
     private static void q3(JavaSparkContext sparkContext, JavaRDD rdd) {
@@ -129,11 +122,14 @@ public class Main {
 
         JavaSparkContext sparkContext = getSparkContext(onServer);
 
+        int vectorCount = 250;
+        int vectorLength = 10;
+
         Dataset dataset = q1a(sparkContext, onServer);
 
         //JavaPairRDD rdd = q1b(sparkContext, onServer);
 
-        q2(sparkContext, dataset);
+        q2(sparkContext, dataset, vectorCount, vectorLength);
 
         // q3(sparkContext, rdd);
 
