@@ -52,6 +52,18 @@ public class Main {
         //df.show(10);
         //System.out.println("Dataframe's schema:");
         //df.printSchema();
+<<<<<<< Updated upstream
+        System.out.println("dataframe content:");
+        df.show(10);
+        System.out.println("Dataframe's schema:");
+        df.printSchema();
+=======
+        //System.out.println("Excerpt of the dataframe content:");
+        //df.show(10);
+        
+        // System.out.println("Dataframe's schema:");
+        //df.printSchema();
+>>>>>>> Stashed changes
         
         return df;
     }
@@ -73,7 +85,6 @@ public class Main {
     }
 
 
-    
    
     private static void q2(JavaSparkContext sparkContext, Dataset dataset, int vectorCount, int vectorLength) { 
         //int tau = 20;
@@ -86,6 +97,8 @@ public class Main {
 
         Dataset<Row> triples = sparkSession.sql(query_getTriples);
         triples.createOrReplaceTempView("triples");
+        //System.out.println("Number of distinct triples: " + triples.count());
+        //triples.show();
 
         // aggregate
         for (int i = 1; i <= vectorLength; i++) {
@@ -96,11 +109,53 @@ public class Main {
             Dataset<Row> column = sparkSession.sql(query);
             triples = triples.join(column);
         }
-
         triples = triples.drop("xid", "yid", "zid", "x", "y", "z");
         triples.show();
-        triples.createOrReplaceTempView("X");
 
+
+        // Use the transpose function to transpose the DataFrame
+        String[] cols = triples.columns();
+        Column[] transposedCols = functions.transpose(functions.array(cols)).alias("values");
+        Dataset<Row> XTransposed = triples.select(transposedCols);
+
+// Show the transposed DataFrame
+XTransposed.show();
+
+// Show the transposed DataFrame
+XTransposed.show();
+
+        // for (int i = 1; i <= vectorLength; i++) {
+        //     String query = String.format("SELECT X%d FROM triples_with_agg",  i);
+
+        //     Dataset<Row> result = sparkSession.sql(query);
+        //     result.show();
+
+        // }
+
+
+        // for (int i = 1; i <= vectorLength; i++) {
+        //     String query = String.format("SELECT " +
+        //             "((pow(element_at(x, %d),2) + pow(element_at(y, %d),2) + pow(element_at(z, %d),2))) / %d) - " +
+        //             " (pow(((element_at(x, %d) + element_at(y, %d) + element_at(z, %d)) / %d), 2)))" +
+        //             " AS V%d " +
+        //             "FROM triples",  i, i, i, vectorLength, i, i, i, vectorLength, i);
+
+
+        //     Dataset<Row> result = sparkSession.sql(query);
+        //     result.createOrReplaceTempView("split");
+        //     result.show();
+
+        // }
+
+        /*
+         * SELECT 
+            SUM(x_array[0] + y_array[0] + z_array[0]) / COUNT(*) AS mu,
+            (SUM(POWER(x_array[0] + y_array[0] + z_array[0], 2)) / COUNT(*)) - POWER(SUM(x_array[0] + y_array[0] + z_array[0]) / COUNT(*), 2) AS V
+            FROM 
+            triplets
+         * 
+         */
+       
     }
 
     private static void q3(JavaSparkContext sparkContext, JavaRDD rdd) {
