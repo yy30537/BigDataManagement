@@ -86,30 +86,28 @@ public class Main {
 
         Dataset<Row> triples = sparkSession.sql(query_getTriples);
         triples.createOrReplaceTempView("triples");
-        //System.out.println("Number of distinct triples: " + triples.count());
-        //triples.show();
+        System.out.println("Number of distinct triples: " + triples.count());
+        triples.show();
 
-        // aggregate
+        // create aggregate vector
         for (int i = 1; i <= vectorLength; i++) {
-            String query = String.format("SELECT " +
+            String query_aggregate = String.format("SELECT " +
                     "(element_at(x, %d) + element_at(y, %d) + element_at(z, %d)) " +
                     " AS X%d " +
                     "FROM triples; ", i, i, i, i);
-            Dataset<Row> column = sparkSession.sql(query);
+            Dataset<Row> column = sparkSession.sql(query_aggregate);
             triples = triples.join(column);
         }
 
-
-        triples = triples.drop("xid", "yid", "zid", "x", "y", "z");
-        //triples.show();
+        triples.show();
         triples.createOrReplaceTempView("Aggregate");
         //System.out.println(triples.schema());
 
+
+        // Generate SELECT clause
         String selectClause = "";
         String powClause = "";
         String aggClause = "";
-
-        // Generate the SELECT clause
         for (int i = 1; i <= vectorLength; i++) {
             selectClause += String.format("POW(X%d, 2)", i);
             powClause += String.format("X%d", i);
@@ -121,25 +119,24 @@ public class Main {
             }
         }
 
-        // Generate the SQL query
+        // Generate SQL query that calculates variance
         String query = String.format(
             "SELECT ((%s) / %d) - POW(((%s) / %d), 2) AS Variance FROM Aggregate",
             selectClause, vectorLength, aggClause, vectorLength
         );
         
+
         Dataset<Row> result = sparkSession.sql(query);
         result.show();
 
-        // Partition the DataFrame based on the Variance column
-        Dataset<Row> partitionedData = result.repartition(col("Variance"));
-        partitionedData.show();
 
-        // // Query the partitioned DataFrame
-        Dataset<Row> countResult = partitionedData.filter(col("Variance").leq(tau));
-        countResult.show();
+        // Filter the results based on the Variance column
+        Dataset<Row> filter = result.filter(col("Variance").leq(tau));
+        long count = filter.count();
+        System.out.println("Count: " + count);
 
-        long count = countResult.count();
-        System.out.println("Result: " + count);
+        // long count = countResult.count();
+        // System.out.println("Result: " + count);
     }
 
     private static void q3(JavaSparkContext sparkContext, JavaRDD rdd) {
