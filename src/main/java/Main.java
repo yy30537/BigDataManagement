@@ -126,14 +126,19 @@ public class Main {
         );
         
 
+
         Dataset<Row> result = sparkSession.sql(query);
+        result.show();
+        result.createOrReplaceTempView("Variance");
+        
+        result = sparkSession.sql(String.format("SELECT * FROM Variance WHERE Variance <= %d", tau));
         result.show();
 
 
         // Filter the results based on the Variance column
-        Dataset<Row> filter = result.filter(col("Variance").leq(tau));
-        long count = filter.count();
-        System.out.println("Count: " + count);
+        // Dataset<Row> filter = result.filter(col("Variance").leq(tau));
+        // long count = filter.count();
+        // System.out.println("Count: " + count);
 
         // long count = countResult.count();
         // System.out.println("Result: " + count);
