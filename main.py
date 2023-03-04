@@ -8,6 +8,9 @@ from pyspark.sql.functions import *
 from pyspark.sql.types import DoubleType
 from typing import List, Tuple
 from datetime import datetime
+import logging
+
+import numpy as np
 
 
 def get_spark_context(on_server) -> SparkContext:
@@ -15,6 +18,7 @@ def get_spark_context(on_server) -> SparkContext:
     if not on_server:
         spark_conf = spark_conf.setMaster("local[*]")
     spark_context = SparkContext.getOrCreate(spark_conf)
+    spark_context.setLogLevel("ERROR")
 
     if on_server:
         # TODO: You may want to change ERROR to WARN to receive more info. For larger data sets, to not set the
@@ -83,6 +87,9 @@ def q1b(spark_context: SparkContext, on_server: bool) -> RDD:
     vectors_rdd02 = vectors_rdd01.map(lambda line: tuple(line.strip().split(',')))
     vectors_rdd = vectors_rdd02.map(lambda x: (x[0], [int(val) for val in x[1].split(';')]))
     
+    vectors_rdd = vectors_rdd.repartition(16)       ### !!! set number of partition !!!###
+    print("Number of Partition: {}".format(vectors_rdd.getNumPartitions()))
+    
     #vectors_5rows = vectors_rdd.values().take(5)
     #vectors_5rows = vectors_rdd.keys().take(5)
     #print(vectors_5rows)
@@ -104,22 +111,74 @@ def q2(spark_context: SparkContext, data_frame: DataFrame):
     # Define the list of taus to be used in the query
     taus = [20, 50, 310, 360, 410]
 
+    # Dictionary to store the number of results and execution time for each tau
+    results = {}
+
+    for tau in taus:
+        start_time = datetime.now()
+
+        # Execute the SQL query with the current value of tau
+        query = f"""
+            SELECT X._c0 AS X, Y._c0 AS Y, Z._c0 AS Z
+            FROM vectors X, vectors Y, vectors Z
+            WHERE X._c0 < Y._c0 AND Y._c0 < Z._c0
+            GROUP BY X._c0, Y._c0, Z._c0
+            HAVING aggregate(
+                CONCAT_WS('', X._c1, Y._c1, Z._c1),
+                (0.0, 0.0, 0),
+                (acc, x) -> (acc._1 + x * x, acc._2 + x, acc._3 + 1),
+                acc -> (acc._1 / acc._3) - (acc._2 / acc._3) * (acc._2 / acc._3)
+            ) <= {tau}
+        """
+
+        result_df = spark_session.sql(query)
+
+        # Count the number of results
+        num_results = result_df.count()
+
+        end_time = datetime.now()
+
+        # Calculate the execution time in seconds
+        execution_time = (end_time - start_time).total_seconds()
+
+        # Store the number of results and execution time for the current tau
+        results[tau] = (num_results, execution_time)
+
+        print(f"tau = {tau}: {num_results} results in {execution_time} seconds")
+
     return
 
 
 def q3(spark_context: SparkContext, rdd: RDD):
     # TODO: Implement Q3 here
 
-    #printRDD = rdd.take(5)
-    #print("printRDD: ", printRDD[0][0])
-    #print("printRDD: ", printRDD[0][1])
+    tau = [20, 410]
 
-    taus = [20, 410]
+    tau = [20, 410]
 
-    combinations02 = rdd.cartesian(rdd).cartesian(rdd).map(lambda x: (x[0][0], x[0][1], x[1]))
-    #combinations02 = rdd.cartesian(rdd).cartesian(rdd).map(lambda x: (x[0][0], x[0][1], x[1])).filter(lambda x: x[0][0]<x[1][0] and x[1][0]<x[2][0])
-    printCombinations02 = combinations02.take(4)
-    print("printCombinations02: ", printCombinations02)
+    combinationsRDD = rdd.cartesian(rdd).cartesian(rdd).map(lambda x: (x[0][0], x[0][1], x[1])).filter(lambda x: x[0][0]<x[1][0] and x[1][0]<x[2][0])
+    #combinationVarianceRDD.persist(StorageLevel.MEMORY_ONLY)
+    combinationsRDD.cache()     # CACHING
+    if combinationsRDD.is_cached:
+        print("RDD is cached!")
+    combinationsRDDCount = combinationsRDD.count()
+    print("combinationsRDDCount: ", combinationsRDDCount)
+
+    # map the aggregate vectors function
+    combinationVectorsRDD = combinationsRDD.map(lambda x: (x[0][0], x[1][0], x[2][0], [np.sum(i) for i in zip(x[0][1], x[1][1], x[2][1])]))
+
+    # map the aggregate variance function
+    combinationVarianceRDD = combinationVectorsRDD.map(lambda x: (x[0], x[1], x[2], np.var(x[3])))
+    
+    printcombinationVarianceRDD = combinationVarianceRDD.take(10)
+    print("printcombinationVarianceRDD: ", printcombinationVarianceRDD)
+
+    for t in tau:
+        # filter the triple vectors <X,Y,Z> with variance less than threshold (tau) and then use .count() function to get the total number of the triple vectors
+        print("tau: {}".format(t))
+        combinationFilter = combinationVarianceRDD.filter(lambda x: x[3]<=t)
+        printcombinationFilter = combinationFilter.count()
+        print("{} combinations for tau less than {}".format(printcombinationFilter, t))
 
     return
 
