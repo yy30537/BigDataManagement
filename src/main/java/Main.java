@@ -75,6 +75,10 @@ public class Main {
 
    
     private static void q2(JavaSparkContext sparkContext, Dataset dataset, int vectorCount, int vectorLength) { 
+        long startTime = System.currentTimeMillis();
+        long endTime;
+        long elapsedTime;
+        String query;
         int tau = 20;
 
         SparkSession sparkSession = SparkSession.builder().appName("example").getOrCreate();
@@ -86,16 +90,16 @@ public class Main {
 
         Dataset<Row> triples = sparkSession.sql(query_getTriples);
         triples.createOrReplaceTempView("triples");
-        System.out.println("Number of distinct triples: " + triples.count());
+        System.out.println("Number of distinct triples: " + triples.count()); // <==================================但是这个又很快
         triples.show();
 
         // create aggregate vector
         for (int i = 1; i <= vectorLength; i++) {
-            String query_aggregate = String.format("SELECT " +
+            query = String.format("SELECT " +
                     "(element_at(x, %d) + element_at(y, %d) + element_at(z, %d)) " +
                     " AS X%d " +
                     "FROM triples; ", i, i, i, i);
-            Dataset<Row> column = sparkSession.sql(query_aggregate);
+            Dataset<Row> column = sparkSession.sql(query);
             triples = triples.join(column);
         }
 
@@ -103,6 +107,9 @@ public class Main {
         triples.createOrReplaceTempView("Aggregate");
         //System.out.println(triples.schema());
 
+        endTime = System.currentTimeMillis();
+        elapsedTime = endTime - startTime;
+        System.out.println("Elapsed time until Aggregate is calculated: " + elapsedTime + " ms");
 
         // Generate SELECT clause
         String selectClause = "";
@@ -120,25 +127,30 @@ public class Main {
         }
 
         // Generate SQL query that calculates variance
-        String query = String.format(
-            "SELECT * FROM (SELECT ((%s) / %d) - POW(((%s) / %d), 2) AS Variance FROM Aggregate) WHERE Variance <= %d",
+        query = String.format(
+            "SELECT * FROM (SELECT ((%s) / %d) - POW(((%s) / %d), 2) AS Variance FROM Aggregate) ",
             selectClause, vectorLength, aggClause, vectorLength, tau
         );
-        
-
 
         Dataset<Row> result = sparkSession.sql(query);
+        
         result.show();
 
+        // // Generate SQL query that calculates variance
+        // String query = String.format(
+        //     "SELECT * FROM (SELECT ((%s) / %d) - POW(((%s) / %d), 2) AS Variance FROM Aggregate) WHERE Variance <= %d",
+        //     selectClause, vectorLength, aggClause, vectorLength, tau
+        // );
+
+        //result = result.repartition(col("Variance"));
 
 
-        // Filter the results based on the Variance column
-        // Dataset<Row> filter = result.filter(col("Variance").leq(tau));
-        // long count = filter.count();
-        // System.out.println("Count: " + count);
+        System.out.println("Count: " + result.count());  // <================================== 这个算不出来
+        
+        // endTime = System.currentTimeMillis();
+        // elapsedTime = endTime - startTime;
+        // System.out.println("Elapsed time: " + elapsedTime + " ms");
 
-        // long count = countResult.count();
-        // System.out.println("Result: " + count);
     }
 
     private static void q3(JavaSparkContext sparkContext, JavaRDD rdd) {
@@ -160,19 +172,14 @@ public class Main {
 
         JavaSparkContext sparkContext = getSparkContext(onServer);
 
-        int vectorCount = 250;
-        int vectorLength = 10;
+        int vectorCount = 40;
+        int vectorLength = 20;
 
         Dataset dataset = q1a(sparkContext, onServer);
-
         //JavaPairRDD rdd = q1b(sparkContext, onServer);
-
         q2(sparkContext, dataset, vectorCount, vectorLength);
-
         // q3(sparkContext, rdd);
-
         // q4(sparkContext, rdd);
-
         sparkContext.close();
     }
 }
