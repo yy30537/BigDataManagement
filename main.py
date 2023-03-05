@@ -26,7 +26,8 @@ def get_spark_context(on_server) -> SparkContext:
     if on_server:
         # TODO: You may want to change ERROR to WARN to receive more info. For larger data sets, to not set the
         # log level to anything below WARN, Spark will print too much information.
-        spark_context.setLogLevel("ERROR")
+        #spark_context.setLogLevel("ERROR")
+        spark_context.setLogLevel("WARN")
 
     return spark_context
 
@@ -89,13 +90,6 @@ def q1b(spark_context: SparkContext, on_server: bool) -> RDD:
     # Split each line by comma and convert the values to integers
     vectors_rdd02 = vectors_rdd01.map(lambda line: tuple(line.strip().split(',')))
     vectors_rdd = vectors_rdd02.map(lambda x: (x[0], [int(val) for val in x[1].split(';')]))
-    
-    #vectors_rdd = vectors_rdd.repartition(16)       ### !!! set number of partition !!!###
-    #print("Number of Partition: {}".format(vectors_rdd.getNumPartitions()))
-    
-    #vectors_5rows = vectors_rdd.values().take(5)
-    #vectors_5rows = vectors_rdd.keys().take(5)
-    #print(vectors_5rows)
 
     return vectors_rdd
 
@@ -135,15 +129,22 @@ def q3(spark_context: SparkContext, rdd: RDD):
     #tau = [20, 410]
     tau = spark_context.broadcast([20, 410])
 
-    combinationsRDD = rdd.cartesian(rdd).cartesian(rdd)
-    
-    combinationsRDDPartition = combinationsRDD.repartition(64)
-#    combinationsRDDPartition = combinationsRDD.repartition(160)
+    NumPartition = 64
+#    NumPartition = 160     # for server (2 workers, each work has 40 cores, so 80 cores in total)
+
+    combsXYRDD = rdd.cartesian(rdd)
+    combsXYRDDPar = combsXYRDD.repartition(NumPartition)
+    combsXYRDD_ = combsXYRDDPar.filter(lambda x: x[0][0]<x[1][0])
+    combsXYRDDCoa = combsXYRDD_.coalesce(1)
+
+    combsXYZRDD_ = combsXYRDDCoa.cartesian(rdd)
+    combsXYZRDDPar = combsXYZRDD_.repartition(NumPartition)
+    combsXYZRDD = combsXYZRDDPar.filter(lambda x: x[0][1][0]<x[1][0])
 
     print("tau: {}".format(tau.value[1]))
-    combsRDD410 = combinationsRDDPartition.filter(lambda x: x[0][0][0]<x[0][1][0] and x[0][1][0]<x[1][0]) \
-                                            .map(lambda x: (x[0][0][0], x[0][1][0], x[1][0], aggregate_variance(x[0][0][1], x[0][1][1], x[1][1]))) \
-                                            .filter(lambda x: x[3] <= tau.value[1])
+    combsRDD410 = combsXYZRDD.filter(lambda x: aggregate_variance(x[0][0][1], x[0][1][1], x[1][1])<=tau.value[1])
+
+#   .map(lambda x: (x[0][0][0], x[0][1][0], x[1][0], aggregate_variance(x[0][0][1], x[0][1][1], x[1][1])))
 
     combsRDD410Cache = combsRDD410.cache()
 
@@ -151,7 +152,9 @@ def q3(spark_context: SparkContext, rdd: RDD):
     print("{} combinations with tau less than {}".format(combsRDD410Count, tau.value[1]))
 
     print("tau: {}".format(tau.value[0]))
-    combsRDD20 = combsRDD410Cache.filter(lambda x: x[3] <= tau.value[0])
+#    combsRDD20 = combsRDD410Cache.filter(lambda x: x <= tau.value[0])
+#    combsRDD20 = combsRDD410Cache.filter(lambda x: x[3] <= tau.value[0])
+    combsRDD20 = combsRDD410Cache.filter(lambda x: aggregate_variance(x[0][0][1], x[0][1][1], x[1][1])<=tau.value[0])
     combsRDD20Count = combsRDD20.count()
     print("{} combinations with tau less than {}".format(combsRDD20Count, tau.value[0]))
 
