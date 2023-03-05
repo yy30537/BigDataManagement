@@ -7,10 +7,13 @@ from pyspark.sql.functions import udf
 from pyspark.sql.functions import *
 from pyspark.sql.types import DoubleType
 from typing import List, Tuple
-from datetime import datetime
-import logging
+
+#import logging
 
 import numpy as np
+
+def aggregate_variance(v1: list, v2: list, v3: list) -> float:
+    return np.var([np.sum(x) for x in zip(v1, v2, v3)])
 
 
 def get_spark_context(on_server) -> SparkContext:
@@ -87,8 +90,8 @@ def q1b(spark_context: SparkContext, on_server: bool) -> RDD:
     vectors_rdd02 = vectors_rdd01.map(lambda line: tuple(line.strip().split(',')))
     vectors_rdd = vectors_rdd02.map(lambda x: (x[0], [int(val) for val in x[1].split(';')]))
     
-    vectors_rdd = vectors_rdd.repartition(16)       ### !!! set number of partition !!!###
-    print("Number of Partition: {}".format(vectors_rdd.getNumPartitions()))
+    #vectors_rdd = vectors_rdd.repartition(16)       ### !!! set number of partition !!!###
+    #print("Number of Partition: {}".format(vectors_rdd.getNumPartitions()))
     
     #vectors_5rows = vectors_rdd.values().take(5)
     #vectors_5rows = vectors_rdd.keys().take(5)
@@ -129,31 +132,28 @@ def q2(spark_context: SparkContext, data_frame: DataFrame):
 def q3(spark_context: SparkContext, rdd: RDD):
     # TODO: Implement Q3 here
 
-    tau = [20, 410]
+    #tau = [20, 410]
+    tau = spark_context.broadcast([20, 410])
 
-    combinationsRDD = rdd.cartesian(rdd).cartesian(rdd).map(lambda x: (x[0][0], x[0][1], x[1])).filter(lambda x: x[0][0]<x[1][0] and x[1][0]<x[2][0])
-    #combinationVarianceRDD.persist(StorageLevel.MEMORY_ONLY)
-    combinationsRDD.cache()     # CACHING
-    if combinationsRDD.is_cached:
-        print("RDD is cached!")
-    combinationsRDDCount = combinationsRDD.count()
-    print("combinationsRDDCount: ", combinationsRDDCount)
-
-    # map the aggregate vectors function
-    combinationVectorsRDD = combinationsRDD.map(lambda x: (x[0][0], x[1][0], x[2][0], [np.sum(i) for i in zip(x[0][1], x[1][1], x[2][1])]))
-
-    # map the aggregate variance function
-    combinationVarianceRDD = combinationVectorsRDD.map(lambda x: (x[0], x[1], x[2], np.var(x[3])))
+    combinationsRDD = rdd.cartesian(rdd).cartesian(rdd)
     
-    printcombinationVarianceRDD = combinationVarianceRDD.take(10)
-    print("printcombinationVarianceRDD: ", printcombinationVarianceRDD)
+    combinationsRDDPartition = combinationsRDD.repartition(64)
+#    combinationsRDDPartition = combinationsRDD.repartition(160)
 
-    for t in tau:
-        # filter the triple vectors <X,Y,Z> with variance less than threshold (tau) and then use .count() function to get the total number of the triple vectors
-        print("tau: {}".format(t))
-        combinationFilter = combinationVarianceRDD.filter(lambda x: x[3]<=t)
-        printcombinationFilter = combinationFilter.count()
-        print("{} combinations for tau less than {}".format(printcombinationFilter, t))
+    print("tau: {}".format(tau.value[1]))
+    combsRDD410 = combinationsRDDPartition.filter(lambda x: x[0][0][0]<x[0][1][0] and x[0][1][0]<x[1][0]) \
+                                            .map(lambda x: (x[0][0][0], x[0][1][0], x[1][0], aggregate_variance(x[0][0][1], x[0][1][1], x[1][1]))) \
+                                            .filter(lambda x: x[3] <= tau.value[1])
+
+    combsRDD410Cache = combsRDD410.cache()
+
+    combsRDD410Count = combsRDD410Cache.count()
+    print("{} combinations with tau less than {}".format(combsRDD410Count, tau.value[1]))
+
+    print("tau: {}".format(tau.value[0]))
+    combsRDD20 = combsRDD410Cache.filter(lambda x: x[3] <= tau.value[0])
+    combsRDD20Count = combsRDD20.count()
+    print("{} combinations with tau less than {}".format(combsRDD20Count, tau.value[0]))
 
     return
 
@@ -165,9 +165,12 @@ def q4(spark_context: SparkContext, rdd: RDD):
 
 if __name__ == '__main__':
 
+    from datetime import datetime
+
     start_time = datetime.now()
 
     on_server = False  # TODO: Set this to true if and only if deploying to the server
+#    on_server = True
 
     spark_context = get_spark_context(on_server)
 
