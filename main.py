@@ -126,20 +126,25 @@ def q2(spark_context: SparkContext, data_frame: DataFrame):
 def q3(spark_context: SparkContext, rdd: RDD):
     # TODO: Implement Q3 here
 
+    ### *** mapPartitions() *** ###
+    ### *** def filter_sum(): *** ###
+
     #tau = [20, 410]
     tau = spark_context.broadcast([20, 410])
 
-    NumPartition = 64
+    NumPartition = 32
 #    NumPartition = 160     # for server (2 workers, each work has 40 cores, so 80 cores in total)
 
     combsXYRDD = rdd.cartesian(rdd)
     combsXYRDDPar = combsXYRDD.repartition(NumPartition)
     combsXYRDD_ = combsXYRDDPar.filter(lambda x: x[0][0]<x[1][0])
-    combsXYRDDCoa = combsXYRDD_.coalesce(1)
+#    combsXYRDDCoa = combsXYRDD_.coalesce(1)
 
-    combsXYZRDD_ = combsXYRDDCoa.cartesian(rdd)
-    combsXYZRDDPar = combsXYZRDD_.repartition(NumPartition)
+    combsXYZRDD = combsXYRDD_.cartesian(rdd)
+#    combsXYZRDDPar = combsXYZRDD_.repartition(NumPartition)
+    combsXYZRDDPar = combsXYZRDD.coalesce(NumPartition)
     combsXYZRDD = combsXYZRDDPar.filter(lambda x: x[0][1][0]<x[1][0])
+    print("combsXYZRDD Partition: ", combsXYZRDD.getNumPartitions())
 
     print("tau: {}".format(tau.value[1]))
     combsRDD410 = combsXYZRDD.filter(lambda x: aggregate_variance(x[0][0][1], x[0][1][1], x[1][1])<=tau.value[1])
