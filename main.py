@@ -11,9 +11,20 @@ from typing import List, Tuple
 #import logging
 
 import numpy as np
+from datetime import datetime
+
+#def aggregate_variance(v1: list, v2: list, v3: list) -> float:
+#    return np.var([np.sum(x) for x in zip(v1, v2, v3)])    # the np.sum() is slow (WHY???)
+
+#def aggregate_variance(v1: list, v2: list, v3: list) -> float:
+#    return np.var(list(map(sum, zip(v1, v2, v3))))         # Error: map() and sum() are standard operation for Spark, conflict with Python map() and sum()
 
 def aggregate_variance(v1: list, v2: list, v3: list) -> float:
-    return np.var([np.sum(x) for x in zip(v1, v2, v3)])
+    lenList = len(v1)
+    sumList = []
+    for i in range(0, lenList):
+        sumList.append(v1[i] + v2[i] + v3[i])
+    return np.var(sumList)
 
 def get_spark_context(on_server) -> SparkContext:
     spark_conf = SparkConf().setAppName("2AMD15")
@@ -128,7 +139,7 @@ def q3(spark_context: SparkContext, rdd: RDD):
     #tau = [20, 410]
     tau = spark_context.broadcast([20, 410])
 
-    NumPartition = 48
+    NumPartition = 64
 #    NumPartition = 160     # for server (2 workers, each work has 40 cores, so 80 cores in total)
 
     combsXYRDD = rdd.cartesian(rdd)
@@ -148,18 +159,19 @@ def q3(spark_context: SparkContext, rdd: RDD):
     print("tau: {}".format(tau.value[1]))
     combsRDD410 = combsXYZRDD.filter(lambda x: aggregate_variance(x[0][0][1], x[0][1][1], x[1][1])<=tau.value[1])
     #combsRDD410 = combsXYZRDDCache.filter(lambda x: aggregate_variance(x[0][0][1], x[0][1][1], x[1][1])<=tau.value[1])
-
     combsRDD410Cache = combsRDD410.cache()
-    combsRDD410Count = combsRDD410Cache.count()
+    combsRDD410Count = combsRDD410.collect()
 
     combsRDD410_ = combsRDD410Cache.map(lambda x: (x[0][0][0], x[0][1][0], x[1][0], aggregate_variance(x[0][0][1], x[0][1][1], x[1][1])))
-    
-    print("{} combinations with tau less than {}".format(combsRDD410Count, tau.value[1]))
-    print("")
+
     combsRDD410Coa = combsRDD410_.coalesce(1)
     #combsRDD410Coa.saveAsTextFile("/home/results_410")
-    combsRDD410Coa.saveAsTextFile("results_410")
+    #combsRDD410Coa.saveAsTextFile("results_410")
     combsRDD410Col = combsRDD410Coa.collect()
+
+    print("{} combinations with tau less than {}".format(len(combsRDD410Col), tau.value[1]))
+    print("")
+
     for row in combsRDD410Col:
         print(row[0] + ", " + row[1] + ", " + row[2] + ", " + str(row[3]))
     
@@ -175,18 +187,19 @@ def q3(spark_context: SparkContext, rdd: RDD):
 #    combsRDD20 = combsRDD410Cache.filter(lambda x: x <= tau.value[0])
 #    combsRDD20 = combsRDD410Cache.filter(lambda x: x[3] <= tau.value[0])
     combsRDD20 = combsRDD410Cache.filter(lambda x: aggregate_variance(x[0][0][1], x[0][1][1], x[1][1])<=tau.value[0])
-    combsRDD20Cache = combsRDD20.cache()
-    combsRDD20Count = combsRDD20Cache.count()
+#    combsRDD20Cache = combsRDD20.cache()
+#    combsRDD20Count = combsRDD20.collect()
 
-    combsRDD20_ = combsRDD20Cache.map(lambda x: (x[0][0][0], x[0][1][0], x[1][0], aggregate_variance(x[0][0][1], x[0][1][1], x[1][1])))
+    combsRDD20_ = combsRDD20.map(lambda x: (x[0][0][0], x[0][1][0], x[1][0], aggregate_variance(x[0][0][1], x[0][1][1], x[1][1])))
     combsRDD20Coa = combsRDD20_.coalesce(1)
     #combsRDD20Coa.saveAsTextFile("/home/results_20")
-    combsRDD20Coa.saveAsTextFile("results_20")
-    
-    print("{} combinations with tau less than {}".format(combsRDD20Count, tau.value[0]))
-    print("")
+    #combsRDD20Coa.saveAsTextFile("results_20")
 
     combsRDD20Col = combsRDD20Coa.collect()
+
+    print("{} combinations with tau less than {}".format(len(combsRDD20Col), tau.value[0]))
+    print("")
+
     for row in combsRDD20Col:
         print(row[0] + ", " + row[1] + ", " + row[2] + ", " + str(row[3]))
     
@@ -201,8 +214,6 @@ def q4(spark_context: SparkContext, rdd: RDD):
 
 
 if __name__ == '__main__':
-
-    from datetime import datetime
 
     start_time = datetime.now()
 
@@ -225,6 +236,6 @@ if __name__ == '__main__':
 
     print("***********************************************")
     print(f"Execution time: {end_time - start_time}")
-    print("***********************************************")
+    print("***********************************************")    
 
     spark_context.stop()
