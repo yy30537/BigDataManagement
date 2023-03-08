@@ -41,7 +41,6 @@ def get_spark_context(on_server) -> SparkContext:
 
     return spark_context
 
-
 def q1a(spark_context: SparkContext, on_server: bool) -> DataFrame:
     start_time = datetime.now()
 
@@ -88,7 +87,6 @@ def q1a(spark_context: SparkContext, on_server: bool) -> DataFrame:
 
     return df
 
-
 def q1b(spark_context: SparkContext, on_server: bool) -> RDD:
     vectors_file_path = "/vectors.csv" if on_server else "vectors.csv"
 
@@ -102,7 +100,6 @@ def q1b(spark_context: SparkContext, on_server: bool) -> RDD:
     vectors_rdd = vectors_rdd02.map(lambda x: (x[0], [int(val) for val in x[1].split(';')]))
 
     return vectors_rdd
-
 
 def q2(spark_context: SparkContext, data_frame: DataFrame):
     # TODO: Implement Q2 here
@@ -132,78 +129,78 @@ def q2(spark_context: SparkContext, data_frame: DataFrame):
 
     return
 
-
 def q3(spark_context: SparkContext, rdd: RDD):
-    # TODO: Implement Q3 here
 
-    #tau = [20, 410]
-    tau = spark_context.broadcast([20, 410])
+    print("\n\n\n\n\n")
+    print("rdd: ")
+    printRDD = rdd.collect()
+    for i, row in enumerate(printRDD):
+        if i >= 5:
+            break
+        print(row)
 
-    NumPartition = 64
-#    NumPartition = 160     # for server (2 workers, each work has 40 cores, so 80 cores in total)
+    tau = 20
 
-    combsXYRDD = rdd.cartesian(rdd)
-    combsXYRDDPar = combsXYRDD.repartition(NumPartition)
-    combsXYRDD_ = combsXYRDDPar.filter(lambda x: x[0][0]<x[1][0])
-#    combsXYRDDCoa = combsXYRDD_.coalesce(1)
+    # cartesian join the keys 
+    keys = rdd.keys()
+    keys2 = keys.cartesian(keys)
+    keys2 = keys2.filter(lambda x: x[0][0] < x[0][1])
+    keys3 = keys2.cartesian(keys)
+    keys3 = keys3.filter(lambda x: x[0][1][0] < x[1][0])
 
-    combsXYZRDD = combsXYRDD_.cartesian(rdd)
-#    combsXYZRDDPar = combsXYZRDD_.repartition(NumPartition)
-    combsXYZRDDPar = combsXYZRDD.coalesce(NumPartition)
-    combsXYZRDD = combsXYZRDDPar.filter(lambda x: x[0][1][0]<x[1][0])
-    print("combsXYZRDD Partition: ", combsXYZRDD.getNumPartitions())
+    # Convert keys3 to an RDD and count the number of elements
+    # count = keys3.count()
+    # print(count)
 
-    #combsXYZRDDCache = combsXYZRDD.cache()     # Error: out of memory
-    #combsXYZRDDCacheCount = combsXYZRDDCache.count()
+    key_list = keys3.collect()
+    broadcast_lst = spark_context.broadcast(key_list)
 
-    print("tau: {}".format(tau.value[1]))
-    combsRDD410 = combsXYZRDD.filter(lambda x: aggregate_variance(x[0][0][1], x[0][1][1], x[1][1])<=tau.value[1])
-    #combsRDD410 = combsXYZRDDCache.filter(lambda x: aggregate_variance(x[0][0][1], x[0][1][1], x[1][1])<=tau.value[1])
-    combsRDD410Cache = combsRDD410.cache()
-    combsRDD410Count = combsRDD410.collect()
+    print("\n")
+    print("broadcast_lst: ")
+    for i, row in enumerate(broadcast_lst.value):
+        if i >= 5:
+            break
+        print(row)
 
-    combsRDD410_ = combsRDD410Cache.map(lambda x: (x[0][0][0], x[0][1][0], x[1][0], aggregate_variance(x[0][0][1], x[0][1][1], x[1][1])))
+    # x[0][0][0] -> first key
+    # x[0][0][1] -> second key
+    # x[0][1] -> third key
 
-    combsRDD410Coa = combsRDD410_.coalesce(1)
-    #combsRDD410Coa.saveAsTextFile("/home/results_410")
-    #combsRDD410Coa.saveAsTextFile("results_410")
-    combsRDD410Col = combsRDD410Coa.collect()
 
-    print("{} combinations with tau less than {}".format(len(combsRDD410Col), tau.value[1]))
-    print("")
 
-    for row in combsRDD410Col:
-        print(row[0] + ", " + row[1] + ", " + row[2] + ", " + str(row[3]))
-    
-    #combsXYZRDDCache.unpersist()
 
-    print("")
-    print("=================================================================================================")
-    print("=================================================================================================")
-    print("=================================================================================================")
-    print("")
 
-    print("tau: {}".format(tau.value[0]))
-#    combsRDD20 = combsRDD410Cache.filter(lambda x: x <= tau.value[0])
-#    combsRDD20 = combsRDD410Cache.filter(lambda x: x[3] <= tau.value[0])
-    combsRDD20 = combsRDD410Cache.filter(lambda x: aggregate_variance(x[0][0][1], x[0][1][1], x[1][1])<=tau.value[0])
-#    combsRDD20Cache = combsRDD20.cache()
-#    combsRDD20Count = combsRDD20.collect()
+    # for keys in broadcast_lst.value:
+        
+    #     key1 = keys[0][0]
+    #     key2 = keys[0][1] 
+    #     key3 = keys[1]
 
-    combsRDD20_ = combsRDD20.map(lambda x: (x[0][0][0], x[0][1][0], x[1][0], aggregate_variance(x[0][0][1], x[0][1][1], x[1][1])))
-    combsRDD20Coa = combsRDD20_.coalesce(1)
-    #combsRDD20Coa.saveAsTextFile("/home/results_20")
-    #combsRDD20Coa.saveAsTextFile("results_20")
+    #     # Find the rows in the RDD that match the first key
+    #     row1 = rdd.filter(lambda x: x[0] == key1).collect()
 
-    combsRDD20Col = combsRDD20Coa.collect()
+    #     # Find the rows in the RDD that match the second key
+    #     row2 = rdd.filter(lambda x: x[0] == key2).collect()
 
-    print("{} combinations with tau less than {}".format(len(combsRDD20Col), tau.value[0]))
-    print("")
+    #     # Find the rows in the RDD that match the third key
+    #     row3 = rdd.filter(lambda x: x[0] == key3).collect()
 
-    for row in combsRDD20Col:
-        print(row[0] + ", " + row[1] + ", " + row[2] + ", " + str(row[3]))
-    
-    print("")
+    #     # print(row1[0][1])
+    #     # print(row2[0][1])
+    #     # print(row3[0][1])
+    #     # print("================")
+
+    #     arr1 = row1[0][1]
+    #     arr2 = row2[0][1]
+    #     arr3 = row3[0][1]
+
+    #     # Do something with the rows (e.g. print them)
+    #     # Calculate the aggregated variance
+    #     v = aggregate_variance(arr1, arr2, arr3)
+
+    #     print(f"Aggregated variance of {key1}, {key2}, {key3}: {v}")
+
+
 
     return
 
@@ -234,8 +231,8 @@ if __name__ == '__main__':
 
     end_time = datetime.now()
 
-    print("***********************************************")
-    print(f"Execution time: {end_time - start_time}")
-    print("***********************************************")    
+    # print("***********************************************")
+    # print(f"Execution time: {end_time - start_time}")
+    # print("***********************************************")    
 
     spark_context.stop()
