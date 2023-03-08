@@ -7,6 +7,7 @@ from pyspark.sql.functions import udf
 from pyspark.sql.functions import *
 from pyspark.sql.types import DoubleType
 from typing import List, Tuple
+from statistics import pvariance
 
 #import logging
 
@@ -34,42 +35,22 @@ def get_spark_context(on_server) -> SparkContext:
 def q1a(spark_context: SparkContext, on_server: bool) -> DataFrame:
     start_time = datetime.now()
 
-    vectors_file_path = "/vectors.csv" if on_server else "vectors.csv"
+    vectors_file_path = "/vectors.csv" if on_server else "./vectors.csv"
 
-    spark_session = SparkSession(spark_context)
+    spark = SparkSession(spark_context)
 
     # TODO: Implement Q1a here by creating a Dataset of DataFrame out of the file at {@code vectors_file_path}
 
     
-    
     # Read CSV file into DataFrame
-    df1 = spark_session.read.option("header", "false") \
-        .csv(vectors_file_path)
-        #.option("delimiter",";") \
-        #.option("inferSchema", "true") \
+    df = spark.read.option("header", "false") \
+        .csv(vectors_file_path) \
+        .withColumnRenamed("_c0", "key").withColumnRenamed("_c1", "value") \
+        .select('key', split(col("value"),";").cast("array<int>").alias("value")) \
+        .sort('value')
 
-    df2 = df1.withColumnRenamed("_c0", "k").withColumnRenamed("_c1", "v")
-    
-    # df3 = df2.select(split(col("v"),";")).alias("vs").drop("v")
-    df3 = df2.select("k", split("v",";").alias("v"))
-    #df4 = df3.select("k", col("v").cast("int"))
-    #df4.printSchema()
-
-    df_size = df3.select(size("v").alias("v"))
-    nb_columns = df_size.agg(max("v")).collect()[0][0]
-    
-    split_df = df3.select("k", *[df3["v"][i] for i in range(nb_columns)])
-
-    #cols = ["v[0]", "v[1]", "v[2]", "v[3]", "v[4]"]
-    cols = ["v[{}]".format(x) for x in range(0, 5)]     ### !!! CHANGE TO 10000 !!! ###
-    print("cols: ", cols)
-    df = split_df.select("k", *(col(c).cast("int") for c in cols))
-
-    #print("Excerpt of the dataframe content:")
-    #df.show(10)
-
-    #print("Dataframe's schema:")
-    #df.printSchema()
+    # df.show(n=10)
+    # df.take(6) # take 拿出来的是array
 
     end_time = datetime.now()
     #print('Duration (q1a): {}'.format(end_time - start_time))
@@ -96,10 +77,15 @@ def q1b(spark_context: SparkContext, on_server: bool) -> RDD:
 def q2(spark_context: SparkContext, data_frame: DataFrame):
     # TODO: Implement Q2 here
 
-    spark_session = SparkSession(spark_context)
+    spark = SparkSession(spark_context)
 
-    data_frame.show(10)
-    data_frame.printSchema()
+    # udf
+    aggregate_var = udf(lambda x, y, z: pvariance(
+        [x[i] + y[i] + z[i]
+        for i in range( len(x) ) ]
+    ))
+    # register udf
+    spark.udf.register('aggregate_var', aggregate_var)
 
     # Create a temporary view for the DataFrame
     data_frame.createOrReplaceTempView("vectors")
@@ -110,7 +96,20 @@ def q2(spark_context: SparkContext, data_frame: DataFrame):
     for tau in taus:
         start_time = datetime.now()
 
-        
+        sqlWay = spark.sql('''
+        SELECT id1, id2, id3, var 
+        FROM (
+            SELECT id1, id2, id3, aggregate_var(v1,v2,v3) as var
+            FROM(
+                SELECT  vectors1.key as id1, vectors2.key as id2, vectors3.key as id3, vectors1.value as v1, vectors2.value as v2, vectors3.value as v3
+                FROM vectors as vectors1, vectors as vectors2, vectors as vectors3  
+                WHERE vectors1.value < vectors2.value and vectors2.value < vectors3.value
+            )
+        )
+        WHERE var < {}
+        '''.format(tau))
+
+        count = sqlWay.count()
 
         end_time = datetime.now()
 
@@ -207,17 +206,17 @@ if __name__ == '__main__':
     start_time = datetime.now()
 
     on_server = False  # TODO: Set this to true if and only if deploying to the server
-#    on_server = True
+    # on_server = True
 
     spark_context = get_spark_context(on_server)
 
-    # data_frame = q1a(spark_context, on_server)
+    data_frame = q1a(spark_context, on_server)
 
-    rdd = q1b(spark_context, on_server)
+    # rdd = q1b(spark_context, on_server)
 
-    # q2(spark_context, data_frame)
+    q2(spark_context, data_frame)
 
-    q3(spark_context, rdd)
+    # q3(spark_context, rdd)
 
     # q4(spark_context, rdd)
 
