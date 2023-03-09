@@ -26,6 +26,10 @@ def aggregate_variance(v1: list, v2: list, v3: list) -> float:
         sumList.append(v1[i] + v2[i] + v3[i])
     return np.var(sumList)
 
+#def aggregate_variance(v1: np.array, v2: np.array, v3: np.array) -> float:
+#    sum_array = v1 + v2 + v3
+#    return np.var(sum_array)
+
 def get_spark_context(on_server) -> SparkContext:
     spark_conf = SparkConf().setAppName("2AMD15")
     if not on_server:
@@ -131,76 +135,74 @@ def q2(spark_context: SparkContext, data_frame: DataFrame):
 
 def q3(spark_context: SparkContext, rdd: RDD):
 
-    print("\n\n\n\n\n")
-    print("rdd: ")
-    printRDD = rdd.collect()
-    for i, row in enumerate(printRDD):
-        if i >= 5:
-            break
-        print(row)
+#    NumPartition = 64
+#    NumPartition = 160     # for server (2 workers, each work has 40 cores, so 80 cores in total)
+    NumPartition = 320
 
-    tau = 20
+    tau = spark_context.broadcast([20, 410])
+
+    vectors = rdd.collect()
+    vectors_dict = dict(vectors)
+    #vectors = rdd.collectAsMap()
+    
+    broadcast_vectors = spark_context.broadcast(vectors_dict) # broadcast this list of vector ID and respective elements to all executors.
 
     # cartesian join the keys 
     keys = rdd.keys()
     keys2 = keys.cartesian(keys)
-    keys2 = keys2.filter(lambda x: x[0][0] < x[0][1])
+    keys2 = keys2.filter(lambda x: x[0] < x[1])
     keys3 = keys2.cartesian(keys)
-    keys3 = keys3.filter(lambda x: x[0][1][0] < x[1][0])
+    keys3 = keys3.filter(lambda x: x[0][1] < x[1] and x[0][0] < x[1])
 
-    # Convert keys3 to an RDD and count the number of elements
-    # count = keys3.count()
-    # print(count)
+    keyRDD = keys3.repartition(NumPartition)
 
-    key_list = keys3.collect()
-    broadcast_lst = spark_context.broadcast(key_list)
+    print("Number of partitions: ", keyRDD.getNumPartitions())
 
-    print("\n")
-    print("broadcast_lst: ")
-    for i, row in enumerate(broadcast_lst.value):
-        if i >= 5:
-            break
-        print(row)
+    print("tau: {}".format(tau.value[1]))
+    resultRDD410 = keyRDD.filter(lambda x: aggregate_variance(broadcast_vectors.value[x[0][0]], \
+                                                            broadcast_vectors.value[x[0][1]], \
+                                                            broadcast_vectors.value[x[1]])<=tau.value[1])
+    resultRDD410Cache = resultRDD410.cache()
+    resultRDD410Count = resultRDD410.count()
 
-    # x[0][0][0] -> first key
-    # x[0][0][1] -> second key
-    # x[0][1] -> third key
+    resultRDD410_ = resultRDD410Cache.map(lambda x: (x[0][0], x[0][1], x[1], aggregate_variance(broadcast_vectors.value[x[0][0]], \
+                                                                                                broadcast_vectors.value[x[0][1]], \
+                                                                                                broadcast_vectors.value[x[1]])))
+    resultRDD410collect = resultRDD410_.collect()
 
+    print("")
+    print("{} combinations with tau less than {}".format(resultRDD410Count, tau.value[1]))
 
+    print("")
+    for result in resultRDD410collect:
+        print(result)
 
+    print("")
+    print("=================================================================================================")
+    print("=================================================================================================")
+    print("=================================================================================================")
+    print("")
 
+    print("tau: {}".format(tau.value[0]))
+    resultRDD20 = resultRDD410Cache.filter(lambda x: aggregate_variance(broadcast_vectors.value[x[0][0]], \
+                                                                        broadcast_vectors.value[x[0][1]], \
+                                                                        broadcast_vectors.value[x[1]])<=tau.value[0])
+    resultRDD20_ = resultRDD20.map(lambda x: (x[0][0], x[0][1], x[1], aggregate_variance(broadcast_vectors.value[x[0][0]], \
+                                                                                        broadcast_vectors.value[x[0][1]], \
+                                                                                        broadcast_vectors.value[x[1]])))
+    resultRDD20Collect = resultRDD20_.collect()
 
-    # for keys in broadcast_lst.value:
-        
-    #     key1 = keys[0][0]
-    #     key2 = keys[0][1] 
-    #     key3 = keys[1]
+    print("{} combinations with tau less than {}".format(len(resultRDD20Collect), tau.value[0]))
+    print("")
 
-    #     # Find the rows in the RDD that match the first key
-    #     row1 = rdd.filter(lambda x: x[0] == key1).collect()
+    for result in resultRDD20Collect:
+        print(result)
+    print("")
 
-    #     # Find the rows in the RDD that match the second key
-    #     row2 = rdd.filter(lambda x: x[0] == key2).collect()
-
-    #     # Find the rows in the RDD that match the third key
-    #     row3 = rdd.filter(lambda x: x[0] == key3).collect()
-
-    #     # print(row1[0][1])
-    #     # print(row2[0][1])
-    #     # print(row3[0][1])
-    #     # print("================")
-
-    #     arr1 = row1[0][1]
-    #     arr2 = row2[0][1]
-    #     arr3 = row3[0][1]
-
-    #     # Do something with the rows (e.g. print them)
-    #     # Calculate the aggregated variance
-    #     v = aggregate_variance(arr1, arr2, arr3)
-
-    #     print(f"Aggregated variance of {key1}, {key2}, {key3}: {v}")
-
-
+    print("******************************************")
+    print("********** Dataset 1000 x 10000 **********")
+    print("******************************************")
+    print("")
 
     return
 
@@ -214,8 +216,8 @@ if __name__ == '__main__':
 
     start_time = datetime.now()
 
-    on_server = False  # TODO: Set this to true if and only if deploying to the server
-#    on_server = True
+#    on_server = False  # TODO: Set this to true if and only if deploying to the server
+    on_server = True
 
     spark_context = get_spark_context(on_server)
 
@@ -231,8 +233,8 @@ if __name__ == '__main__':
 
     end_time = datetime.now()
 
-    # print("***********************************************")
-    # print(f"Execution time: {end_time - start_time}")
-    # print("***********************************************")    
+    print("***********************************************")
+    print(f"Execution time: {end_time - start_time}")
+    print("***********************************************")    
 
     spark_context.stop()
