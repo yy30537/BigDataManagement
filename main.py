@@ -133,11 +133,10 @@ def q2(spark_context: SparkContext, data_frame: DataFrame):
     return
 
 def q3(spark_context: SparkContext, rdd: RDD):
-    # start_time = datetime.now()
+    start_time = datetime.now()
 
     print(f"rdd partitions = {rdd.getNumPartitions()}") 
 
-    
     NumPartition = 8
 
     # broadcast dictionary version of rdd, broadcast tau
@@ -145,6 +144,7 @@ def q3(spark_context: SparkContext, rdd: RDD):
     rdd_dict = rdd.collectAsMap()
     broadcast_lst = spark_context.broadcast(rdd_dict)
     broadcast_tau = spark_context.broadcast(tau)
+
 
     # cartesian join rdd key columns
     keys = rdd.keys()
@@ -168,11 +168,11 @@ def q3(spark_context: SparkContext, rdd: RDD):
                                                 np.array(broadcast_lst.value[x[0][0]]), 
                                                 np.array(broadcast_lst.value[x[0][1]]), 
                                                 np.array(broadcast_lst.value[x[1]])) <= broadcast_tau.value)
-    # resultRDD = resultRDD.map(lambda x: (x, aggregate_variance(
-    #                             np.array(broadcast_lst.value[x[0][0]]), 
-    #                             np.array(broadcast_lst.value[x[0][1]]), 
-    #                             np.array(broadcast_lst.value[x[1]]))
-    #                         )).reduceByKey(lambda x, y: x + y)
+    resultRDD = resultRDD.map(lambda x: (x, aggregate_variance(
+                                np.array(broadcast_lst.value[x[0][0]]), 
+                                np.array(broadcast_lst.value[x[0][1]]), 
+                                np.array(broadcast_lst.value[x[1]]))
+                            )).reduceByKey(lambda x, y: x + y)
 
 
     print(f"keys3 partitions = {resultRDD.getNumPartitions()}") 
