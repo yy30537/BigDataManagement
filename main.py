@@ -19,12 +19,15 @@ from datetime import datetime
 #def aggregate_variance(v1: list, v2: list, v3: list) -> float:
 #    return np.var(list(map(sum, zip(v1, v2, v3))))         # Error: map() and sum() are standard operation for Spark, conflict with Python map() and sum()
 
-def aggregate_variance(v1: list, v2: list, v3: list) -> float:
-    lenList = len(v1)
-    sumList = []
-    for i in range(0, lenList):
-        sumList.append(v1[i] + v2[i] + v3[i])
-    return np.var(sumList)
+# def aggregate_variance(v1: list, v2: list, v3: list) -> float:
+#     lenList = len(v1)
+#     sumList = []
+#     for i in range(0, lenList):
+#         sumList.append(v1[i] + v2[i] + v3[i])
+#     return np.var(sumList)
+def aggregate_variance(v1: np.array, v2: np.array, v3: np.array) -> float:
+    sum_array = v1 + v2 + v3
+    return np.var(sum_array)
 
 def get_spark_context(on_server) -> SparkContext:
     spark_conf = SparkConf().setAppName("2AMD15")
@@ -134,54 +137,51 @@ def q3(spark_context: SparkContext, rdd: RDD):
 
     print(f"rdd partitions = {rdd.getNumPartitions()}") 
 
-    tau = 20
-    # NumPartition = 64
+    
+    NumPartition = 8
 
+    # broadcast dictionary version of rdd, broadcast tau
+    tau = 20
     rdd_dict = rdd.collectAsMap()
     broadcast_lst = spark_context.broadcast(rdd_dict)
     broadcast_tau = spark_context.broadcast(tau)
 
-    # cartesian join the keys 
+    # cartesian join rdd key columns
     keys = rdd.keys()
+    #keys = keys.repartition(NumPartition)
     keys2 = keys.cartesian(keys)
-    print(f"keys2 partitions = {keys2.getNumPartitions()}") 
-
-    #print(f"1 {keys2.getNumPartitions()}") 
-    # keys2 = keys2.coalesce(NumPartition)
-    # print(f"2 {keys2.getNumPartitions()}") 
-
+    print(f"keys2 partitions after 1st cartesian = {keys2.getNumPartitions()}") 
+    #keys2 = keys2.repartition(NumPartition)
     keys2 = keys2.filter(lambda x: x[0] < x[1])
     keys3 = keys2.cartesian(keys)
-    print(f"keys3 partitions = {keys2.getNumPartitions()}") 
-
-    # print(f"3 {keys3.getNumPartitions()}") 
-    # keys3 = keys3.coalesce(NumPartition)
-    # print(f"4 {keys3.getNumPartitions()}") 
-
+    print(f"keys3 partitions after 2nd cartesian = {keys2.getNumPartitions()}") 
+    #keys3 = keys3.repartition(NumPartition)
     keys3 = keys3.filter(lambda x: x[0][1] < x[1] and x[0][0] < x[1])
 
-    # print(f"5 {keys3.getNumPartitions()}") 
-    # keys3 = keys3.coalesce(NumPartition)
-    # print(f"6 {keys3.getNumPartitions()}") 
 
     # Cache the RDD in memory to speed up subsequent computations
-    keys3.cache()
+    keys3Cache = keys3.cache()
+    print(f"keys3Cache partitions = {keys3Cache.getNumPartitions()}") 
 
-    # Use filter function instead of filtering in mapPartitions
-    resultRDD1 = keys3.filter(lambda x: aggregate_variance(broadcast_lst.value[x[0][0]], broadcast_lst.value[x[0][1]], broadcast_lst.value[x[1]]) <= broadcast_tau.value)
-    resultRDD2 = resultRDD1.map(lambda x: (x, aggregate_variance(broadcast_lst.value[x[0][0]], broadcast_lst.value[x[0][1]], broadcast_lst.value[x[1]]))).reduceByKey(lambda x, y: x + y)
+    # calculations
+    resultRDD = keys3Cache.filter(lambda x: aggregate_variance(
+                                                np.array(broadcast_lst.value[x[0][0]]), 
+                                                np.array(broadcast_lst.value[x[0][1]]), 
+                                                np.array(broadcast_lst.value[x[1]])) <= broadcast_tau.value)
+    # resultRDD = resultRDD.map(lambda x: (x, aggregate_variance(
+    #                             np.array(broadcast_lst.value[x[0][0]]), 
+    #                             np.array(broadcast_lst.value[x[0][1]]), 
+    #                             np.array(broadcast_lst.value[x[1]]))
+    #                         )).reduceByKey(lambda x, y: x + y)
 
-    # Coalesce the RDD to reduce the number of partitions
-    # resultRDD2 = resultRDD2.coalesce(1)
 
-    print(f"keys3 partitions = {resultRDD2.getNumPartitions()}") 
+    print(f"keys3 partitions = {resultRDD.getNumPartitions()}") 
 
-    print("{} combinations less than {}".format(resultRDD2.count(), broadcast_tau.value))
+    print("{} combinations less than {}".format(resultRDD.count(), broadcast_tau.value))
 
 
     end_time = datetime.now()
     print(f"Execution time: {end_time - start_time}")
-
     return
 
 def q4(spark_context: SparkContext, rdd: RDD):
@@ -193,8 +193,8 @@ if __name__ == '__main__':
 
     start_time = datetime.now()
 
-    # on_server = False  # TODO: Set this to true if and only if deploying to the server
-    on_server = True
+    on_server = False  # TODO: Set this to true if and only if deploying to the server
+    # on_server = True
 
     spark_context = get_spark_context(on_server)
 
