@@ -73,36 +73,32 @@ def q2(spark_context: SparkContext, data_frame: DataFrame):
     taus = [20, 50, 310, 360, 410]
 
     df_q2 = data_frame.drop("num_list", "list")
+    # df_q2 = df_q2.withColumn("int_list", col("int_list").cast("array<long>"))
     # df_q2.show()
     df_q2.repartition(24)
     df_q2.createOrReplaceTempView('data')
 
-    query = "SELECT id1, id2, id3, agg_array, aggregate(agg_array, 0, (acc, x) -> acc + x*x)/size(agg_array) - POW(aggregate(agg_array, 0, (acc, x) -> acc + x)/size(agg_array), 2) as var \
+    query = "SELECT id1, id2, id3, aggregate(agg_array, cast(0 as long), (acc, x) -> acc + x*x)/size(agg_array) - POW(aggregate(agg_array, 0, (acc, x) -> acc + x)/size(agg_array), 2) as var \
                 FROM ( \
                     SELECT data1.id as id1, data2.id as id2, data3.id as id3, \
                             zip_with(data3.int_list, zip_with(data1.int_list, data2.int_list, (x, y) -> x + y), (x, y) -> x + y) as agg_array\
                     FROM data as data1, data as data2, data as data3\
                     WHERE data1.id < data2.id and data2.id < data3.id \
                 ) as agg_vector \
-            "
+            " #-, agg_array
 
     results = spark_session.sql(query)
-    results.repartition(12)
+    results.repartition(24)
     results.createOrReplaceTempView('result')
     # spark_session.sql("cache table cached_table AS select * from result")
     results.show()
     results.printSchema()
 
-    # query3 = "SELECT * FROM result WHERE var <= 410"
-    # new_result = spark_session.sql(query3)
-    # new_result.repartition(24)
-    # new_result.createOrReplaceTempView('n410')
-
-    result_new = results.drop("agg_array").filter(col("var") <= 410)
+    result_new = results.filter(col("var") <= 410)
     result_new.repartition(24)
     result_new.createOrReplaceTempView('result_n')
     spark_session.sql("cache table cached_table AS select * from result_n")
-    result_new.show()
+    result_new.show(truncate=False)
 
     for tau in taus:
         query2 = "SELECT count(1) FROM cached_table WHERE var <= {tau}".format(tau=tau) #result
