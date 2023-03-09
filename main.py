@@ -130,80 +130,59 @@ def q2(spark_context: SparkContext, data_frame: DataFrame):
     return
 
 def q3(spark_context: SparkContext, rdd: RDD):
+    # start_time = datetime.now()
 
-    print("\n\n\n\n\n")
-    print("rdd: ")
-    printRDD = rdd.collect()
-    for i, row in enumerate(printRDD):
-        if i >= 5:
-            break
-        print(row)
+    print(f"rdd partitions = {rdd.getNumPartitions()}") 
 
     tau = 20
+    # NumPartition = 64
+
+    rdd_dict = rdd.collectAsMap()
+    broadcast_lst = spark_context.broadcast(rdd_dict)
+    broadcast_tau = spark_context.broadcast(tau)
 
     # cartesian join the keys 
     keys = rdd.keys()
     keys2 = keys.cartesian(keys)
-    keys2 = keys2.filter(lambda x: x[0][0] < x[0][1])
+    print(f"keys2 partitions = {keys2.getNumPartitions()}") 
+
+    #print(f"1 {keys2.getNumPartitions()}") 
+    # keys2 = keys2.coalesce(NumPartition)
+    # print(f"2 {keys2.getNumPartitions()}") 
+
+    keys2 = keys2.filter(lambda x: x[0] < x[1])
     keys3 = keys2.cartesian(keys)
-    keys3 = keys3.filter(lambda x: x[0][1][0] < x[1][0])
+    print(f"keys3 partitions = {keys2.getNumPartitions()}") 
 
-    # Convert keys3 to an RDD and count the number of elements
-    # count = keys3.count()
-    # print(count)
+    # print(f"3 {keys3.getNumPartitions()}") 
+    # keys3 = keys3.coalesce(NumPartition)
+    # print(f"4 {keys3.getNumPartitions()}") 
 
-    key_list = keys3.collect()
-    broadcast_lst = spark_context.broadcast(key_list)
+    keys3 = keys3.filter(lambda x: x[0][1] < x[1] and x[0][0] < x[1])
 
-    print("\n")
-    print("broadcast_lst: ")
-    for i, row in enumerate(broadcast_lst.value):
-        if i >= 5:
-            break
-        print(row)
+    # print(f"5 {keys3.getNumPartitions()}") 
+    # keys3 = keys3.coalesce(NumPartition)
+    # print(f"6 {keys3.getNumPartitions()}") 
 
-    # x[0][0][0] -> first key
-    # x[0][0][1] -> second key
-    # x[0][1] -> third key
+    # Cache the RDD in memory to speed up subsequent computations
+    keys3.cache()
 
+    # Use filter function instead of filtering in mapPartitions
+    resultRDD1 = keys3.filter(lambda x: aggregate_variance(broadcast_lst.value[x[0][0]], broadcast_lst.value[x[0][1]], broadcast_lst.value[x[1]]) <= broadcast_tau.value)
+    resultRDD2 = resultRDD1.map(lambda x: (x, aggregate_variance(broadcast_lst.value[x[0][0]], broadcast_lst.value[x[0][1]], broadcast_lst.value[x[1]]))).reduceByKey(lambda x, y: x + y)
 
+    # Coalesce the RDD to reduce the number of partitions
+    # resultRDD2 = resultRDD2.coalesce(1)
 
+    print(f"keys3 partitions = {resultRDD2.getNumPartitions()}") 
 
-
-    # for keys in broadcast_lst.value:
-        
-    #     key1 = keys[0][0]
-    #     key2 = keys[0][1] 
-    #     key3 = keys[1]
-
-    #     # Find the rows in the RDD that match the first key
-    #     row1 = rdd.filter(lambda x: x[0] == key1).collect()
-
-    #     # Find the rows in the RDD that match the second key
-    #     row2 = rdd.filter(lambda x: x[0] == key2).collect()
-
-    #     # Find the rows in the RDD that match the third key
-    #     row3 = rdd.filter(lambda x: x[0] == key3).collect()
-
-    #     # print(row1[0][1])
-    #     # print(row2[0][1])
-    #     # print(row3[0][1])
-    #     # print("================")
-
-    #     arr1 = row1[0][1]
-    #     arr2 = row2[0][1]
-    #     arr3 = row3[0][1]
-
-    #     # Do something with the rows (e.g. print them)
-    #     # Calculate the aggregated variance
-    #     v = aggregate_variance(arr1, arr2, arr3)
-
-    #     print(f"Aggregated variance of {key1}, {key2}, {key3}: {v}")
+    print("{} combinations less than {}".format(resultRDD2.count(), broadcast_tau.value))
 
 
+    end_time = datetime.now()
+    print(f"Execution time: {end_time - start_time}")
 
     return
-
 
 def q4(spark_context: SparkContext, rdd: RDD):
     # TODO: Implement Q4 here
@@ -214,8 +193,8 @@ if __name__ == '__main__':
 
     start_time = datetime.now()
 
-    on_server = False  # TODO: Set this to true if and only if deploying to the server
-#    on_server = True
+    # on_server = False  # TODO: Set this to true if and only if deploying to the server
+    on_server = True
 
     spark_context = get_spark_context(on_server)
 
