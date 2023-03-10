@@ -147,8 +147,8 @@ def q2(spark_context: SparkContext, data_frame: DataFrame):
 
 def q3(spark_context: SparkContext, rdd: RDD):
 
-    NumPartition = 64
-#    NumPartition = 160     # for server (2 workers, each work has 40 cores, so 80 cores in total)
+#    NumPartition = 32
+    NumPartition = 160     # for server (2 workers, each work has 40 cores, so 80 cores in total)
 #    NumPartition = 240
 
     taus = [20, 410]
@@ -170,30 +170,36 @@ def q3(spark_context: SparkContext, rdd: RDD):
 
     keyRDD = keys3.repartition(NumPartition)
 
-    # print("Number of partitions: ", keyRDD.getNumPartitions())
-    # print("")
+    print("Number of partitions: ", keyRDD.getNumPartitions())
+    print("")
 
     # keyRDDCache = keyRDD.cache()
     # keyRDDCount = keyRDD.count()
     # print("Number of vectors: ", keyRDDCount)
     # print("")
 
-    resultRDD410 = keyRDD.filter(lambda x: aggregate_variance(broadcast_vectors.value[x[0][0]], \
-                                                            broadcast_vectors.value[x[0][1]], \
-                                                            broadcast_vectors.value[x[1]]) <= tau.value[1])
+    resultRDD410a = keyRDD.map(lambda x: (x[0][0], x[0][1], x[1], broadcast_vectors.value[x[0][0]], \
+                                        broadcast_vectors.value[x[0][1]], \
+                                        broadcast_vectors.value[x[1]]))
+
+    resultRDD410b = resultRDD410a.filter(lambda x: aggregate_variance(x[3], x[4], x[5]) <= tau.value[1])
+
+    resultRDD410 = resultRDD410b.map(lambda x: (x[0], x[1], x[2], aggregate_variance(x[3], x[4], x[5])))
+
+    # resultRDD410_ = keyRDD.map(lambda x: (x[0][0], x[0][1], x[1], aggregate_variance(broadcast_vectors.value[x[0][0]], \
+    #                                                                                 broadcast_vectors.value[x[0][1]], \
+    #                                                                                 broadcast_vectors.value[x[1]])))
+
+    # resultRDD410 = resultRDD410_.filter(lambda x: x[3] <= tau.value[1])
     
 #    resultRDD410 = keyRDD.filter(lambda x: np.var([np.sum(i) for i in zip(broadcast_vectors.value[x[0][0]], broadcast_vectors.value[x[0][1]], broadcast_vectors.value[x[1]])]) <= tau.value[1])
                                  
 #    resultRDD410Cache = resultRDD410.cache()
 #    resultRDD410Count = resultRDD410.count()
 
-    resultRDD410_ = resultRDD410.map(lambda x: (x[0][0], x[0][1], x[1], aggregate_variance(broadcast_vectors.value[x[0][0]], \
-                                                                                                broadcast_vectors.value[x[0][1]], \
-                                                                                                broadcast_vectors.value[x[1]])))
-
 #    resultRDD410_ = resultRDD410Cache.map(lambda x: (x[0][0], x[0][1], x[1], np.var([np.sum(i) for i in zip(broadcast_vectors.value[x[0][0]], broadcast_vectors.value[x[0][1]], broadcast_vectors.value[x[1]])])))
 
-    resultRDD410collect = resultRDD410_.collect()
+    resultRDD410collect = resultRDD410.collect()
 
     print("tau: {}".format(taus[0]))
 
@@ -245,7 +251,7 @@ def q3(spark_context: SparkContext, rdd: RDD):
 #     print("")
 
     print("*****************************************")
-    print("********** Dataset 250 x 10000 **********")
+    print("********** Dataset 400 x 10000 **********")
     print("*****************************************")
     print("")
 
@@ -261,8 +267,8 @@ if __name__ == '__main__':
 
     start_time = datetime.now()
 
-    on_server = False  # TODO: Set this to true if and only if deploying to the server
-#    on_server = True
+#    on_server = False  # TODO: Set this to true if and only if deploying to the server
+    on_server = True
 
     spark_context = get_spark_context(on_server)
 
