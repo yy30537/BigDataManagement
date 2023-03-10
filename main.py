@@ -7,10 +7,13 @@ from pyspark.sql.functions import udf
 from pyspark.sql.functions import *
 from pyspark.sql.types import DoubleType
 from typing import List, Tuple
+from array import *
 
 #import logging
 
 import numpy as np
+# import pandas as pd     ### ModuleNotFoundError: No module named 'pandas' (WHY ?)
+
 from datetime import datetime
 
 #def aggregate_variance(v1: list, v2: list, v3: list) -> float:
@@ -19,16 +22,25 @@ from datetime import datetime
 #def aggregate_variance(v1: list, v2: list, v3: list) -> float:
 #    return np.var(list(map(sum, zip(v1, v2, v3))))         # Error: map() and sum() are standard operation for Spark, conflict with Python map() and sum()
 
+#def aggregate_variance(v1: np.array, v2: np.array, v3: np.array) -> float:
+#    sum_array = v1 + v2 + v3
+#    return np.var(sum_array)
+
+# def aggregate_variance(v1: list, v2: list, v3: list) -> float:
+#     df = pd.DataFrame({'List 1': v1, 'List 2': v2, 'List 3': v3})
+#     # calculate the summation of each row using the sum() function
+#     sum_rows = df.sum(axis=1)
+#     # calculate the variance of the summation using the var() function
+#     variance_sum = sum_rows.var()
+#     return variance_sum
+
 def aggregate_variance(v1: list, v2: list, v3: list) -> float:
     lenList = len(v1)
     sumList = []
     for i in range(0, lenList):
         sumList.append(v1[i] + v2[i] + v3[i])
     return np.var(sumList)
-
-#def aggregate_variance(v1: np.array, v2: np.array, v3: np.array) -> float:
-#    sum_array = v1 + v2 + v3
-#    return np.var(sum_array)
+    
 
 def get_spark_context(on_server) -> SparkContext:
     spark_conf = SparkConf().setAppName("2AMD15")
@@ -135,11 +147,13 @@ def q2(spark_context: SparkContext, data_frame: DataFrame):
 
 def q3(spark_context: SparkContext, rdd: RDD):
 
-#    NumPartition = 64
+    NumPartition = 64
 #    NumPartition = 160     # for server (2 workers, each work has 40 cores, so 80 cores in total)
-    NumPartition = 320
+#    NumPartition = 240
 
-    tau = spark_context.broadcast([20, 410])
+    taus = [20, 410]
+
+    tau = spark_context.broadcast(taus)
 
     vectors = rdd.collect()
     vectors_dict = dict(vectors)
@@ -156,52 +170,83 @@ def q3(spark_context: SparkContext, rdd: RDD):
 
     keyRDD = keys3.repartition(NumPartition)
 
-    print("Number of partitions: ", keyRDD.getNumPartitions())
+    # print("Number of partitions: ", keyRDD.getNumPartitions())
+    # print("")
 
-    print("tau: {}".format(tau.value[1]))
+    # keyRDDCache = keyRDD.cache()
+    # keyRDDCount = keyRDD.count()
+    # print("Number of vectors: ", keyRDDCount)
+    # print("")
+
     resultRDD410 = keyRDD.filter(lambda x: aggregate_variance(broadcast_vectors.value[x[0][0]], \
                                                             broadcast_vectors.value[x[0][1]], \
-                                                            broadcast_vectors.value[x[1]])<=tau.value[1])
-    resultRDD410Cache = resultRDD410.cache()
-    resultRDD410Count = resultRDD410.count()
+                                                            broadcast_vectors.value[x[1]]) <= tau.value[1])
+    
+#    resultRDD410 = keyRDD.filter(lambda x: np.var([np.sum(i) for i in zip(broadcast_vectors.value[x[0][0]], broadcast_vectors.value[x[0][1]], broadcast_vectors.value[x[1]])]) <= tau.value[1])
+                                 
+#    resultRDD410Cache = resultRDD410.cache()
+#    resultRDD410Count = resultRDD410.count()
 
-    resultRDD410_ = resultRDD410Cache.map(lambda x: (x[0][0], x[0][1], x[1], aggregate_variance(broadcast_vectors.value[x[0][0]], \
+    resultRDD410_ = resultRDD410.map(lambda x: (x[0][0], x[0][1], x[1], aggregate_variance(broadcast_vectors.value[x[0][0]], \
                                                                                                 broadcast_vectors.value[x[0][1]], \
                                                                                                 broadcast_vectors.value[x[1]])))
+
+#    resultRDD410_ = resultRDD410Cache.map(lambda x: (x[0][0], x[0][1], x[1], np.var([np.sum(i) for i in zip(broadcast_vectors.value[x[0][0]], broadcast_vectors.value[x[0][1]], broadcast_vectors.value[x[1]])])))
+
     resultRDD410collect = resultRDD410_.collect()
 
+    print("tau: {}".format(taus[0]))
+
+    i_tau20 = 0
+    for result in resultRDD410collect:
+        if result[3] < taus[0]:
+            print(result)
+            i_tau20 += 1
+    
     print("")
-    print("{} combinations with tau less than {}".format(resultRDD410Count, tau.value[1]))
+    print("{} combinations with tau less than {}".format(i_tau20, taus[0]))
 
     print("")
+    print("=================================================================================================")
+    print("=================================================================================================")
+    print("=================================================================================================")
+    print("")
+
+    print("tau: {}".format(taus[1]))
+
     for result in resultRDD410collect:
         print(result)
-
+    
     print("")
-    print("=================================================================================================")
-    print("=================================================================================================")
-    print("=================================================================================================")
-    print("")
+    print("{} combinations with tau less than {}".format(len(resultRDD410collect), taus[1]))
 
-    print("tau: {}".format(tau.value[0]))
-    resultRDD20 = resultRDD410Cache.filter(lambda x: aggregate_variance(broadcast_vectors.value[x[0][0]], \
-                                                                        broadcast_vectors.value[x[0][1]], \
-                                                                        broadcast_vectors.value[x[1]])<=tau.value[0])
-    resultRDD20_ = resultRDD20.map(lambda x: (x[0][0], x[0][1], x[1], aggregate_variance(broadcast_vectors.value[x[0][0]], \
-                                                                                        broadcast_vectors.value[x[0][1]], \
-                                                                                        broadcast_vectors.value[x[1]])))
-    resultRDD20Collect = resultRDD20_.collect()
+#     print("tau: {}".format(taus[0]))
+#     # resultRDD20 = resultRDD410Cache.filter(lambda x: aggregate_variance(broadcast_vectors.value[x[0][0]], \
+#     #                                                                     broadcast_vectors.value[x[0][1]], \
+#     #                                                                     broadcast_vectors.value[x[1]]) <= tau.value[0])
 
-    print("{} combinations with tau less than {}".format(len(resultRDD20Collect), tau.value[0]))
-    print("")
+# #    resultRDD20 = resultRDD410Cache.filter(lambda x: np.var([np.sum(i) for i in zip(broadcast_vectors.value[x[0][0]], broadcast_vectors.value[x[0][1]], broadcast_vectors.value[x[1]])]) <= tau.value[0])
 
-    for result in resultRDD20Collect:
-        print(result)
-    print("")
+#     # resultRDD20_ = resultRDD20.map(lambda x: (x[0][0], x[0][1], x[1], aggregate_variance(broadcast_vectors.value[x[0][0]], \
+#     #                                                                                     broadcast_vectors.value[x[0][1]], \
+#     #                                                                                     broadcast_vectors.value[x[1]])))
 
-    print("******************************************")
-    print("********** Dataset 1000 x 10000 **********")
-    print("******************************************")
+# #    resultRDD20_ = resultRDD20.map(lambda x: (x[0][0], x[0][1], x[1], np.var([np.sum(i) for i in zip(broadcast_vectors.value[x[0][0]], broadcast_vectors.value[x[0][1]], broadcast_vectors.value[x[1]])])))
+
+#     resultRDD20_ = resultRDD410Cache.filter(lambda x: x[3] <= tau.value[0])
+
+#     resultRDD20Collect = resultRDD20_.collect()
+
+#     print("{} combinations with tau less than {}".format(len(resultRDD20Collect), taus[0]))
+#     print("")
+
+#     for result in resultRDD20Collect:
+#         print(result)
+#     print("")
+
+    print("*****************************************")
+    print("********** Dataset 250 x 10000 **********")
+    print("*****************************************")
     print("")
 
     return
@@ -216,8 +261,8 @@ if __name__ == '__main__':
 
     start_time = datetime.now()
 
-#    on_server = False  # TODO: Set this to true if and only if deploying to the server
-    on_server = True
+    on_server = False  # TODO: Set this to true if and only if deploying to the server
+#    on_server = True
 
     spark_context = get_spark_context(on_server)
 
