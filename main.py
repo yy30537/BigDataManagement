@@ -7,6 +7,12 @@ from pyspark.sql.functions import udf
 from pyspark.sql.functions import *
 from pyspark.sql.types import DoubleType
 from typing import List, Tuple
+import hashlib
+import numpy as np
+from scipy.sparse import csr_matrix
+from math import ceil, log
+from builtins import min
+
 
 #import logging
 
@@ -105,111 +111,116 @@ def q1b(spark_context: SparkContext, on_server: bool) -> RDD:
 
 
 def q2(spark_context: SparkContext, data_frame: DataFrame):
-    # TODO: Implement Q2 here
-
-    spark_session = SparkSession(spark_context)
-
-    data_frame.show(10)
-    data_frame.printSchema()
-
-    # Create a temporary view for the DataFrame
-    data_frame.createOrReplaceTempView("vectors")
-
-    # Define the list of taus to be used in the query
-    taus = [20, 50, 310, 360, 410]
-
-    for tau in taus:
-        start_time = datetime.now()
-
-        
-
-        end_time = datetime.now()
-
-        # Calculate the execution time in seconds
-        execution_time = (end_time - start_time).total_seconds()
-
-        print("tau={} with {} combiantions in {} seconds".format(tau, count, execution_time))
 
     return
 
 
 def q3(spark_context: SparkContext, rdd: RDD):
-    # TODO: Implement Q3 here
-
-    #tau = [20, 410]
-    tau = spark_context.broadcast([20, 410])
-
-    NumPartition = 64
-#    NumPartition = 160     # for server (2 workers, each work has 40 cores, so 80 cores in total)
-
-    combsXYRDD = rdd.cartesian(rdd)
-    combsXYRDDPar = combsXYRDD.repartition(NumPartition)
-    combsXYRDD_ = combsXYRDDPar.filter(lambda x: x[0][0]<x[1][0])
-#    combsXYRDDCoa = combsXYRDD_.coalesce(1)
-
-    combsXYZRDD = combsXYRDD_.cartesian(rdd)
-#    combsXYZRDDPar = combsXYZRDD_.repartition(NumPartition)
-    combsXYZRDDPar = combsXYZRDD.coalesce(NumPartition)
-    combsXYZRDD = combsXYZRDDPar.filter(lambda x: x[0][1][0]<x[1][0])
-    print("combsXYZRDD Partition: ", combsXYZRDD.getNumPartitions())
-
-    #combsXYZRDDCache = combsXYZRDD.cache()     # Error: out of memory
-    #combsXYZRDDCacheCount = combsXYZRDDCache.count()
-
-    print("tau: {}".format(tau.value[1]))
-    combsRDD410 = combsXYZRDD.filter(lambda x: aggregate_variance(x[0][0][1], x[0][1][1], x[1][1])<=tau.value[1])
-    #combsRDD410 = combsXYZRDDCache.filter(lambda x: aggregate_variance(x[0][0][1], x[0][1][1], x[1][1])<=tau.value[1])
-    combsRDD410Cache = combsRDD410.cache()
-    combsRDD410Count = combsRDD410.collect()
-
-    combsRDD410_ = combsRDD410Cache.map(lambda x: (x[0][0][0], x[0][1][0], x[1][0], aggregate_variance(x[0][0][1], x[0][1][1], x[1][1])))
-
-    combsRDD410Coa = combsRDD410_.coalesce(1)
-    #combsRDD410Coa.saveAsTextFile("/home/results_410")
-    #combsRDD410Coa.saveAsTextFile("results_410")
-    combsRDD410Col = combsRDD410Coa.collect()
-
-    print("{} combinations with tau less than {}".format(len(combsRDD410Col), tau.value[1]))
-    print("")
-
-    for row in combsRDD410Col:
-        print(row[0] + ", " + row[1] + ", " + row[2] + ", " + str(row[3]))
-    
-    #combsXYZRDDCache.unpersist()
-
-    print("")
-    print("=================================================================================================")
-    print("=================================================================================================")
-    print("=================================================================================================")
-    print("")
-
-    print("tau: {}".format(tau.value[0]))
-#    combsRDD20 = combsRDD410Cache.filter(lambda x: x <= tau.value[0])
-#    combsRDD20 = combsRDD410Cache.filter(lambda x: x[3] <= tau.value[0])
-    combsRDD20 = combsRDD410Cache.filter(lambda x: aggregate_variance(x[0][0][1], x[0][1][1], x[1][1])<=tau.value[0])
-#    combsRDD20Cache = combsRDD20.cache()
-#    combsRDD20Count = combsRDD20.collect()
-
-    combsRDD20_ = combsRDD20.map(lambda x: (x[0][0][0], x[0][1][0], x[1][0], aggregate_variance(x[0][0][1], x[0][1][1], x[1][1])))
-    combsRDD20Coa = combsRDD20_.coalesce(1)
-    #combsRDD20Coa.saveAsTextFile("/home/results_20")
-    #combsRDD20Coa.saveAsTextFile("results_20")
-
-    combsRDD20Col = combsRDD20Coa.collect()
-
-    print("{} combinations with tau less than {}".format(len(combsRDD20Col), tau.value[0]))
-    print("")
-
-    for row in combsRDD20Col:
-        print(row[0] + ", " + row[1] + ", " + row[2] + ", " + str(row[3]))
-    
-    print("")
 
     return
 
 
+# In the functions sha1_hash(), sha256_hash(), and md5_hash(), the input vec is assumed to be a vector, which can be a list, tuple, or any other iterable. To compute the hash value of vec, we first convert it to a string using the str() function. For example, if vec is the list [1, 2, 3], then str(vec) will return the string '[1, 2, 3]'.
+# Next, we use a hash function from the hashlib module to hash the string representation of vec. The update() method of the hash object is called with the string representation of vec encoded as bytes using the encode() method. This updates the hash object with the bytes of the string.
+# Finally, the hexdigest() method of the hash object is called to obtain the hash value as a hexadecimal string. This string is then converted to an integer using the int() function with a base of 16, which returns an integer representation of the hash value.
+# The hash value is used to determine which counter in the Count-Min Sketch to increment when hashing a vector. By using a hash function, we can map each item to a random location in the sketch with a high probability of uniformity, which allows us to estimate the frequency or sum of items in the dataset using the sketch.
+def sha1_hash(vec):
+    sha1 = hashlib.sha1()
+    sha1.update(str(vec).encode())
+    return int(sha1.hexdigest(), 16)
+
+def sha256_hash(vec):
+    sha256 = hashlib.sha256()
+    sha256.update(str(vec).encode())
+    return int(sha256.hexdigest(), 16)
+
+def md5_hash(vec):
+    md5 = hashlib.md5()
+    md5.update(str(vec).encode())
+    return int(md5.hexdigest(), 16)
+
 def q4(spark_context: SparkContext, rdd: RDD):
-    # TODO: Implement Q4 here
+    NumPartition = 8     # for server (2 workers, each work has 40 cores, so 80 cores in total)
+    taus = [20, 410]
+    tau = spark_context.broadcast(taus)
+    vectors = rdd.collect()
+    vectors_dict = dict(vectors)
+    broadcast_vectors = spark_context.broadcast(vectors_dict) # broadcast this list of vector ID and respective elements to all executors.
+
+    # cartesian join the keys 
+    keys = rdd.keys()
+    keys2 = keys.cartesian(keys)
+    keys2 = keys2.filter(lambda x: x[0] < x[1])
+    keys3 = keys2.cartesian(keys)
+    keys3 = keys3.filter(lambda x: x[0][1] < x[1] and x[0][0] < x[1])
+
+    keyRDD = keys3.repartition(NumPartition)
+    #print("Number of partitions: ", keyRDD.getNumPartitions())
+    #print("")
+
+    
+    print(f"vectors.pop(): {vectors.pop()}")
+    print(f"rdd.first(): {rdd.first()}")
+    print(f"keyRDD.first(): {keyRDD.first()}")
+
+    # f1: ε={0.001, 0.01}, δ=0.1
+    # f2: ε={0.0001, 0.001, 0.002, 0.01}, δ=0.1
+    e = 2.718
+    epsilon = 0.001
+    delta = 0.1
+    width = ceil(e / epsilon)
+    depth = ceil(log(1 / delta))
+    print(f"w = {width}, d = {depth}")
+    sketch = np.zeros((depth, width))   
+    
+
+    # 3 rows, 2718 cols
+    # d = 3, 3 hash functions
+
+    # Hash the vectors and increment the sketch
+    for vec in vectors:
+
+        # for each vector, mapped to one counter per row
+        
+        for i in range(depth):
+
+            # Apply the chosen hash functions to the vector to obtain the hash values
+            hash_val = sha1_hash(vec[1]) % width 
+            hash_val2 = sha256_hash(vec[1]) % width 
+            hash_val3 = md5_hash(vec[1]) % width  
+
+            # Increment the corresponding element in the Count-Min Sketch by 1
+            sketch[i, hash_val] += vec[1][i]
+            sketch[i, hash_val2] += vec[1][i]
+            sketch[i, hash_val3] += vec[1][i]
+
+    # Estimate the aggregate vectors
+    # To estimate the frequency of an item j, 
+    # we first hash it to d different hash functions, 
+    # resulting in d hash values h1(j), h2(j), h3(j). 
+    # Then,take the minimum value of all the counters that j is hashed to
+
+    # k = 1, 2, 3
+    # where sk[k, hk(j)] is the counter value in the k-th row and hk(j)-th column of the sketch. 
+    # repeat this process for all items in the dataset.
+
+    agg_vectors = []
+    for vec_id in vectors_dict:
+        vec_sum = 0
+        for i in range(depth):
+            hash_val = sha1_hash(vectors_dict[vec_id]) % width
+            hash_val2 = sha256_hash(vectors_dict[vec_id]) % width
+            hash_val3 = md5_hash(vectors_dict[vec_id]) % width
+
+            # use the minimum value of all the counters that the item is hashed to
+            vec_sum += min([sketch[i, hash_val], sketch[i, hash_val2], sketch[i, hash_val3]])
+
+        agg_vectors.append((vec_id, vec_sum))
+
+    #print(agg_vectors)
+
+    #print(sketch)
+
     return
 
 
@@ -228,9 +239,9 @@ if __name__ == '__main__':
 
     # q2(spark_context, data_frame)
 
-    q3(spark_context, rdd)
+    # q3(spark_context, rdd)
 
-    # q4(spark_context, rdd)
+    q4(spark_context, rdd)
 
     end_time = datetime.now()
 
@@ -239,3 +250,4 @@ if __name__ == '__main__':
     print("***********************************************")    
 
     spark_context.stop()
+
