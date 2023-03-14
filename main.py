@@ -5,7 +5,7 @@ os.environ['PYSPARK_PYTHON'] = sys.executable
 os.environ['PYSPARK_DRIVER_PYTHON'] = sys.executable
 from pyspark import SparkConf, SparkContext, RDD
 from pyspark.sql import SparkSession, DataFrame
-
+# from datasketch import CountMinSketch
 from pyspark.sql.functions import split
 from pyspark.sql.types import IntegerType
 import numpy as np
@@ -56,7 +56,7 @@ def q1a(spark_context: SparkContext, on_server: bool) -> DataFrame:
 
 
 def q1b(spark_context: SparkContext, on_server: bool) -> RDD:
-    vectors_file_path = "vectors.csv" if on_server else "vector.csv"
+    vectors_file_path = "vectors.csv" if on_server else "full_vectors.csv"
 
     # TODO: Implement Q1b here by creating an RDD out of the file at {@code vectors_file_path}.
 
@@ -80,9 +80,9 @@ def q1b(spark_context: SparkContext, on_server: bool) -> RDD:
 
     vectors_5rows_value = vectors_rdd.values().take(2)
     vectors_5rows_key = vectors_rdd.keys().take(2)
-    print(vectors_5rows_value)
-    print(vectors_5rows_key)
-    print(type(vectors_rdd))
+    # print(vectors_5rows_value)
+    # print(vectors_5rows_key)
+    # print(type(vectors_rdd))
     return vectors_rdd
 
 
@@ -132,11 +132,43 @@ def q2(spark_context: SparkContext, data_frame: DataFrame):
         results[tau] = (num_results, execution_time)
 
         print(f"tau = {tau}: {num_results} results in {execution_time} seconds")
+Table_row=3
+Table_col=2719
+hash_values = {  # {index: [multiplier, addition]}
+        0: [636928, 2567793],
+        1: [909030, 4151203],
+        2: [1128352, 3152829],
+        3: [2068697, 2587417],
+        4: [2052571, 3764501],
+    }
 
-def q3(spark_context: SparkContext, rdd: RDD):
+def key_hash(value, hash_params):
+    return (hash_params[0] * int(value) + hash_params[1]) % Table_col
+
+def count_min(rdd: RDD):
+    array_rdd=rdd.collect()
+    vectors_table=[]
+    for i in range(len(array_rdd)):
+        print(i)
+        vector=array_rdd[i][1]
+        table=[[0 for j in range(Table_col)] for i in range(Table_row)]
+        for j in range(Table_row):
+            for q in range(10000):#calculate every element hash vlaue in a single vector
+
+                table[j][key_hash(vector[q], hash_values[i])] += 1
+        vectors_table.append((array_rdd[i][0],table))
+    return array_rdd
+def q4(spark_context: SparkContext, rdd: RDD):
     # TODO: Implement Q3 here
 
     #tau = [20, 410]
+    arrrdd=rdd.collect()
+    count_min(rdd)
+    print(type(arrrdd))
+    print(len(arrrdd))
+    print(len(arrrdd[0]))
+    print(len(arrrdd[0][1]))
+    return
     tau = spark_context.broadcast([20, 410])
 
     NumPartition = 8
@@ -234,7 +266,7 @@ if __name__ == '__main__':
 
     # q2(spark_context, data_frame)
 
-    q3(spark_context, rdd)
+    q4(spark_context, rdd)
 
     # q4(spark_context, rdd)
 
