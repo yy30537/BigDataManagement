@@ -165,7 +165,8 @@ def add_hash(x,y,z):
             x[i][j]+=z[i][j]
     return x
 def cal_variance(vector,sum_vec):
-    print('test1')
+    # print('test1')
+    # print(vector)
     min_data=[]
     for i in range(Table_row):
         data=0
@@ -173,6 +174,8 @@ def cal_variance(vector,sum_vec):
             data+=vector[i][j]*vector[i][j]
         min_data.append(data)
     product=min(min_data)
+    # print(product/10000)
+    # print((sum_vec/10000)**2)
     print(product/10000 -(sum_vec/10000)**2)
     return product/10000 -(sum_vec/10000)**2
 def q4(spark_context: SparkContext, rdd: RDD):
@@ -198,9 +201,16 @@ def q4(spark_context: SparkContext, rdd: RDD):
     print(len(test[0][3]))#3
     print(len(test[0][3][0]))#2719
     varianceRDD=CMrdd.map(lambda x:(x[0],x[1],x[2],cal_variance(x[3],x[4])))
-    test=varianceRDD.take(2)
+    test=varianceRDD.take(50)
     print(test)
     print('test2')
+    return
+    varianceRDD=varianceRDD.filter(lambda x: x[0]=='DDCL' and x[1]=='S89U' and x[2]=='WW4S' )
+    varianceRDD=varianceRDD.collect()
+    print(varianceRDD)
+    # test=varianceRDD.take(50)
+    # print(test)
+    # print('test2')
     # varianceRDD=CMrdd.filter(lambda x:x[3]<=400)
     # varianceRDD=varianceRDD.collect()
     # print(len(varianceRDD))
