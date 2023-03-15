@@ -147,7 +147,7 @@ def key_hash(value, hash_params):
 
 def count_min(rdd: RDD):
     array_rdd=rdd.collect()
-    vectors_table=[]
+    vectors_table={}
     for i in range(len(array_rdd)):
         print(i)
         vector=array_rdd[i][1]
@@ -155,20 +155,59 @@ def count_min(rdd: RDD):
         for j in range(Table_row):
             for q in range(10000):#calculate every element hash vlaue in a single vector
 
-                table[j][key_hash(vector[q], hash_values[i])] += 1
-        vectors_table.append((array_rdd[i][0],table))
-    return array_rdd
+                table[j][key_hash(vector[q], hash_values[j])] += 1
+        vectors_table[array_rdd[i][0]]=(table,sum(vector))
+    return vectors_table
+def add_hash(x,y,z):
+    for i in range(Table_row):
+        for j in range(Table_col):
+            x[i][j]+=y[i][j]
+            x[i][j]+=z[i][j]
+    return x
+def cal_variance(vector,sum_vec):
+    print('test1')
+    min_data=[]
+    for i in range(Table_row):
+        data=0
+        for j in range(Table_col):
+            data+=vector[i][j]*vector[i][j]
+        min_data.append(data)
+    product=min(min_data)
+    print(product/10000 -(sum_vec/10000)**2)
+    return product/10000 -(sum_vec/10000)**2
 def q4(spark_context: SparkContext, rdd: RDD):
     # TODO: Implement Q3 here
 
     #tau = [20, 410]
-    arrrdd=rdd.collect()
-    count_min(rdd)
-    print(type(arrrdd))
-    print(len(arrrdd))
-    print(len(arrrdd[0]))
-    print(len(arrrdd[0][1]))
+    
+    table_rdd=count_min(rdd)
+    keys = rdd.keys()
+    keys2 = keys.cartesian(keys)
+    keys2=keys2.filter(lambda x: x[0]<x[1])
+    keys3=keys2.cartesian(keys)
+    keys3=keys3.filter(lambda x: x[1]<x[0][0])
+    test=keys3.take(5)
+    print(test)
+    # print(table_rdd['XEKT'])
+    
+    #label with table sum and the sum of three vectors
+    CMrdd=keys3.map(lambda x:(x[0][0],x[0][1],x[1],add_hash(table_rdd[x[0][0]][0],table_rdd[x[0][1]][0],table_rdd[x[1]][0]),table_rdd[x[0][0]][1]+table_rdd[x[0][1]][1]+table_rdd[x[1]][1]))
+    test=CMrdd.take(1)
+    print(len(test))#1
+    print(len(test[0]))#5
+    print(len(test[0][3]))#3
+    print(len(test[0][3][0]))#2719
+    varianceRDD=CMrdd.map(lambda x:(x[0],x[1],x[2],cal_variance(x[3],x[4])))
+    test=varianceRDD.take(2)
+    print(test)
+    print('test2')
+    # varianceRDD=CMrdd.filter(lambda x:x[3]<=400)
+    # varianceRDD=varianceRDD.collect()
+    # print(len(varianceRDD))
     return
+
+
+
     tau = spark_context.broadcast([20, 410])
 
     NumPartition = 8
