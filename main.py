@@ -1,27 +1,15 @@
 from pyspark import SparkConf, SparkContext, RDD
 from pyspark.sql import SparkSession, DataFrame
-from pyspark.sql.types import StructType, StructField, StringType, ArrayType, IntegerType
 from pyspark.sql.types import *
 from pyspark.sql.functions import split, col, size
-from pyspark.sql.functions import udf
-#from pyspark.sql.functions import *
-from pyspark.sql.types import DoubleType
 from typing import List, Tuple
 import hashlib
 import numpy as np
-from scipy.sparse import csr_matrix
 from math import ceil, log
 from builtins import min
-
 from pyspark.sql.functions import col, pow, struct
-from pyspark.streaming import StreamingContext
 from pyspark.ml.linalg import Vectors
 from pyspark.ml.linalg import Vectors, DenseVector
-from pyspark.ml.feature import CountVectorizer, CountVectorizerModel
-from pyspark.ml.stat import Summarizer
-
-
-#import logging
 
 import numpy as np
 from datetime import datetime
@@ -134,91 +122,58 @@ def q3(spark_context: SparkContext, rdd: RDD):
 #    NumPartition = 240
     taus = [20, 410]
     tau = spark_context.broadcast(taus)
-    vectors = rdd.collect()
-    vectors_dict = dict(vectors)
-    #vectors = rdd.collectAsMap()
-    broadcast_vectors = spark_context.broadcast(vectors_dict) # broadcast this list of vector ID and respective elements to all executors.
 
-    # cartesian join the keys 
+    # obtain keyRDD which contains keys of the vector triples 
     keys = rdd.keys()
     keys2 = keys.cartesian(keys)
     keys2 = keys2.filter(lambda x: x[0] < x[1])
     keys3 = keys2.cartesian(keys)
     keys3 = keys3.filter(lambda x: x[0][1] < x[1] and x[0][0] < x[1])
-
     keyRDD = keys3.repartition(NumPartition)
 
-    print("Number of partitions: ", keyRDD.getNumPartitions())
-    print("")
-
-    # print(f"rdd.first(): {rdd.first()}")
-    # print(f"keyRDD.first(): {keyRDD.first()}")
-    # print(f"rdd.count(): {rdd.count()}")
-    # print(f"keyRDD.count(): {keyRDD.count()}")
-    # keyRDDCache = keyRDD.cache()
-    # keyRDDCount = keyRDD.count()
-    # print("Number of vectors: ", keyRDDCount)
-    # print("")
-
-    
+    # create an rdd that contains original vectors, variance and average for each vector
     var_ag_rdd = rdd.map(lambda x: (x[0], x[1], np.var(x[1]), np.average(x[1])))
-    print(var_ag_rdd.first())
     vectors = var_ag_rdd.collect()
     my_dict = {item[0]: item[1:] for item in vectors}
-    #print("Dictionary:", my_dict)
-    broadcast_vec = spark_context.broadcast(my_dict)
+    broadcast_vectors = spark_context.broadcast(my_dict)
 
-    # cartesian join the keys 
-    k = rdd.keys()
-    k2 = k.cartesian(k)
-    k2 = k2.filter(lambda x: x[0] < x[1])
 
-    print(k2.take(10))
-
+    # compute second term rdd
+    #print(keys2.take(10))
     l = len(rdd.first()[1])
-    print(l)
-
-    print(broadcast_vec.value['N3DZ'][0])
-
-
-    second_term_rdd = k2.map(lambda x: (x, [(1/l) * sum([2 * a * b for a, b in zip(broadcast_vec.value[x[0]][0], broadcast_vec.value[x[1]][0])])]))    
+    print(f"vector length: {l}")
+    second_term_rdd = keys2.map(lambda x: (x, [(1/l) * 
+                                            sum([2 * a * b for a, b in 
+                                                 zip(broadcast_vectors.value[x[0]][0], 
+                                                     broadcast_vectors.value[x[1]][0])])]))    
     #print(second_term_rdd.take(10))
     secondterm = second_term_rdd.collect()
     secondterm = dict(secondterm)
-    #vectors = rdd.collectAsMap()
     broadcast_secondterm = spark_context.broadcast(secondterm) 
 
-    
 
-    # broadcast_vec[1] - vector
-    # broadcast_vec[2] - variance
-    # broadcast_vec[3] - avg
+    # get rid of original vectors list and create a new rdd
+    var_ag_rdd2 = var_ag_rdd.map(lambda x: (x[0], x[2], x[3]))
+    rows = var_ag_rdd2.collect()
+    my_dict2 = {item[0]: item[1:] for item in rows}
+    broadcast_var_agg = spark_context.broadcast(my_dict2)
 
-    # print(broadcast_vec.value['LX4X'])
-    # print(broadcast_vec.value['LX4X'][1])
-    # print(broadcast_vec.value['LX4X'][2])
 
     result = keyRDD.map(lambda x: (x,   
-                            (broadcast_vec.value[x[0][0]][1]) + 
-                            (broadcast_vec.value[x[0][1]][1]) + 
-                            (broadcast_vec.value[x[1]][1]) +
+                            (broadcast_var_agg.value[x[0][0]][0]) + 
+                            (broadcast_var_agg.value[x[0][1]][0]) + 
+                            (broadcast_var_agg.value[x[1]][0]) +
                             broadcast_secondterm.value[(x[0][0], x[0][1])] +
                             broadcast_secondterm.value[(x[0][0], x[1])] +
-                            broadcast_secondterm.value[(x[0][1], x[1])] +
-                            (2 * broadcast_vec.value[x[0][0]][2] * broadcast_vec.value[x[0][1]][2]) - 
-                            (2 * broadcast_vec.value[x[0][0]][2] * broadcast_vec.value[x[1]][2]) - 
-                            (2 * broadcast_vec.value[x[0][1]][2] * broadcast_vec.value[x[1]][2])))
+                            broadcast_secondterm.value[(x[0][1], x[1])] -
+                            (2 * broadcast_var_agg.value[x[0][0]][1] * broadcast_var_agg.value[x[0][1]][1]) - 
+                            (2 * broadcast_var_agg.value[x[0][0]][1] * broadcast_var_agg.value[x[1]][1]) - 
+                            (2 * broadcast_var_agg.value[x[0][1]][1] * broadcast_var_agg.value[x[1]][1])))
     
-    result = result.filter(lambda x: x[1][0] <= tau.value[0] )
+    result = result.filter(lambda x: x[1][0] <= tau.value[0])
 
-    print(result.take(10))
-    print(result.count())
-
-    # resultRDD410b = resultRDD410a.filter(lambda x: aggregate_variance(x[3], x[4], x[5]) <= tau.value[0])
-
-    # resultRDD410 = resultRDD410b.map(lambda x: (x[0], x[1], x[2], aggregate_variance(x[3], x[4], x[5])))
-
-    #print("{} combinations with tau less than {}".format(resultRDD410.count(), tau.value[0]))
+    #print(f"result.first(): {result.first()}")
+    print(f"result.count(): {result.count()}")
 
     return
 
