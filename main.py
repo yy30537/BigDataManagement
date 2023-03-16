@@ -4,16 +4,26 @@ from pyspark.sql.types import StructType, StructField, StringType, ArrayType, In
 from pyspark.sql.types import *
 from pyspark.sql.functions import split, col, size
 from pyspark.sql.functions import udf
-from pyspark.sql.functions import *
+#from pyspark.sql.functions import *
 from pyspark.sql.types import DoubleType
 from typing import List, Tuple
-from array import *
+import hashlib
+import numpy as np
+from scipy.sparse import csr_matrix
+from math import ceil, log
+from builtins import min
+
+from pyspark.sql.functions import col, pow, struct
+from pyspark.streaming import StreamingContext
+from pyspark.ml.linalg import Vectors
+from pyspark.ml.linalg import Vectors, DenseVector
+from pyspark.ml.feature import CountVectorizer, CountVectorizerModel
+from pyspark.ml.stat import Summarizer
+
 
 #import logging
 
 import numpy as np
-# import pandas as pd     ### ModuleNotFoundError: No module named 'pandas' (WHY ?)
-
 from datetime import datetime
 
 #def aggregate_variance(v1: list, v2: list, v3: list) -> float:
@@ -22,25 +32,12 @@ from datetime import datetime
 #def aggregate_variance(v1: list, v2: list, v3: list) -> float:
 #    return np.var(list(map(sum, zip(v1, v2, v3))))         # Error: map() and sum() are standard operation for Spark, conflict with Python map() and sum()
 
-#def aggregate_variance(v1: np.array, v2: np.array, v3: np.array) -> float:
-#    sum_array = v1 + v2 + v3
-#    return np.var(sum_array)
-
-# def aggregate_variance(v1: list, v2: list, v3: list) -> float:
-#     df = pd.DataFrame({'List 1': v1, 'List 2': v2, 'List 3': v3})
-#     # calculate the summation of each row using the sum() function
-#     sum_rows = df.sum(axis=1)
-#     # calculate the variance of the summation using the var() function
-#     variance_sum = sum_rows.var()
-#     return variance_sum
-
 def aggregate_variance(v1: list, v2: list, v3: list) -> float:
     lenList = len(v1)
     sumList = []
     for i in range(0, lenList):
         sumList.append(v1[i] + v2[i] + v3[i])
     return np.var(sumList)
-    
 
 def get_spark_context(on_server) -> SparkContext:
     spark_conf = SparkConf().setAppName("2AMD15")
@@ -56,6 +53,7 @@ def get_spark_context(on_server) -> SparkContext:
         spark_context.setLogLevel("WARN")
 
     return spark_context
+
 
 def q1a(spark_context: SparkContext, on_server: bool) -> DataFrame:
     start_time = datetime.now()
@@ -103,6 +101,7 @@ def q1a(spark_context: SparkContext, on_server: bool) -> DataFrame:
 
     return df
 
+
 def q1b(spark_context: SparkContext, on_server: bool) -> RDD:
     vectors_file_path = "/vectors.csv" if on_server else "vectors.csv"
 
@@ -117,48 +116,27 @@ def q1b(spark_context: SparkContext, on_server: bool) -> RDD:
 
     return vectors_rdd
 
+
 def q2(spark_context: SparkContext, data_frame: DataFrame):
-    # TODO: Implement Q2 here
-
-    spark_session = SparkSession(spark_context)
-
-    data_frame.show(10)
-    data_frame.printSchema()
-
-    # Create a temporary view for the DataFrame
-    data_frame.createOrReplaceTempView("vectors")
-
-    # Define the list of taus to be used in the query
-    taus = [20, 50, 310, 360, 410]
-
-    for tau in taus:
-        start_time = datetime.now()
-
-        
-
-        end_time = datetime.now()
-
-        # Calculate the execution time in seconds
-        execution_time = (end_time - start_time).total_seconds()
-
-        print("tau={} with {} combiantions in {} seconds".format(tau, count, execution_time))
 
     return
+
+def custom_sum(lst):
+    total = 0
+    for item in lst:
+        total += item
+    return total
 
 def q3(spark_context: SparkContext, rdd: RDD):
 
 #    NumPartition = 32
-    NumPartition = 160     # for server (2 workers, each work has 40 cores, so 80 cores in total)
+    NumPartition = 8     # for server (2 workers, each work has 40 cores, so 80 cores in total)
 #    NumPartition = 240
-
     taus = [20, 410]
-
     tau = spark_context.broadcast(taus)
-
     vectors = rdd.collect()
     vectors_dict = dict(vectors)
     #vectors = rdd.collectAsMap()
-    
     broadcast_vectors = spark_context.broadcast(vectors_dict) # broadcast this list of vector ID and respective elements to all executors.
 
     # cartesian join the keys 
@@ -173,93 +151,135 @@ def q3(spark_context: SparkContext, rdd: RDD):
     print("Number of partitions: ", keyRDD.getNumPartitions())
     print("")
 
+    # print(f"rdd.first(): {rdd.first()}")
+    # print(f"keyRDD.first(): {keyRDD.first()}")
+    # print(f"rdd.count(): {rdd.count()}")
+    # print(f"keyRDD.count(): {keyRDD.count()}")
     # keyRDDCache = keyRDD.cache()
     # keyRDDCount = keyRDD.count()
     # print("Number of vectors: ", keyRDDCount)
     # print("")
 
-    resultRDD410a = keyRDD.map(lambda x: (x[0][0], x[0][1], x[1], broadcast_vectors.value[x[0][0]], \
-                                        broadcast_vectors.value[x[0][1]], \
-                                        broadcast_vectors.value[x[1]]))
-
-    resultRDD410b = resultRDD410a.filter(lambda x: aggregate_variance(x[3], x[4], x[5]) <= tau.value[1])
-
-    resultRDD410 = resultRDD410b.map(lambda x: (x[0], x[1], x[2], aggregate_variance(x[3], x[4], x[5])))
-
-    # resultRDD410_ = keyRDD.map(lambda x: (x[0][0], x[0][1], x[1], aggregate_variance(broadcast_vectors.value[x[0][0]], \
-    #                                                                                 broadcast_vectors.value[x[0][1]], \
-    #                                                                                 broadcast_vectors.value[x[1]])))
-
-    # resultRDD410 = resultRDD410_.filter(lambda x: x[3] <= tau.value[1])
     
-#    resultRDD410 = keyRDD.filter(lambda x: np.var([np.sum(i) for i in zip(broadcast_vectors.value[x[0][0]], broadcast_vectors.value[x[0][1]], broadcast_vectors.value[x[1]])]) <= tau.value[1])
-                                 
-#    resultRDD410Cache = resultRDD410.cache()
-#    resultRDD410Count = resultRDD410.count()
+    var_ag_rdd = rdd.map(lambda x: (x[0], x[1], np.var(x[1]), np.average(x[1])))
+    print(var_ag_rdd.first())
+    vectors = var_ag_rdd.collect()
+    my_dict = {item[0]: item[1:] for item in vectors}
+    #print("Dictionary:", my_dict)
+    broadcast_vec = spark_context.broadcast(my_dict)
 
-#    resultRDD410_ = resultRDD410Cache.map(lambda x: (x[0][0], x[0][1], x[1], np.var([np.sum(i) for i in zip(broadcast_vectors.value[x[0][0]], broadcast_vectors.value[x[0][1]], broadcast_vectors.value[x[1]])])))
+    # cartesian join the keys 
+    k = rdd.keys()
+    k2 = k.cartesian(k)
+    k2 = k2.filter(lambda x: x[0] < x[1])
 
-    resultRDD410collect = resultRDD410.collect()
+    print(k2.take(10))
 
-    print("tau: {}".format(taus[0]))
+    l = len(rdd.first()[1])
+    print(l)
 
-    i_tau20 = 0
-    for result in resultRDD410collect:
-        if result[3] < taus[0]:
-            print(result)
-            i_tau20 += 1
+    print(broadcast_vec.value['N3DZ'][0])
+
+
+    second_term_rdd = k2.map(lambda x: (x, [(1/l) * sum([2 * a * b for a, b in zip(broadcast_vec.value[x[0]][0], broadcast_vec.value[x[1]][0])])]))    
+    #print(second_term_rdd.take(10))
+    secondterm = second_term_rdd.collect()
+    secondterm = dict(secondterm)
+    #vectors = rdd.collectAsMap()
+    broadcast_secondterm = spark_context.broadcast(secondterm) 
+
     
-    print("")
-    print("{} combinations with tau less than {}".format(i_tau20, taus[0]))
 
-    print("")
-    print("=================================================================================================")
-    print("=================================================================================================")
-    print("=================================================================================================")
-    print("")
+    # broadcast_vec[1] - vector
+    # broadcast_vec[2] - variance
+    # broadcast_vec[3] - avg
 
-    print("tau: {}".format(taus[1]))
+    # print(broadcast_vec.value['LX4X'])
+    # print(broadcast_vec.value['LX4X'][1])
+    # print(broadcast_vec.value['LX4X'][2])
 
-    for result in resultRDD410collect:
-        print(result)
+    result = keyRDD.map(lambda x: (x,   
+                            (broadcast_vec.value[x[0][0]][1]) + 
+                            (broadcast_vec.value[x[0][1]][1]) + 
+                            (broadcast_vec.value[x[1]][1]) +
+                            broadcast_secondterm.value[(x[0][0], x[0][1])] +
+                            broadcast_secondterm.value[(x[0][0], x[1])] +
+                            broadcast_secondterm.value[(x[0][1], x[1])] +
+                            (2 * broadcast_vec.value[x[0][0]][2] * broadcast_vec.value[x[0][1]][2]) - 
+                            (2 * broadcast_vec.value[x[0][0]][2] * broadcast_vec.value[x[1]][2]) - 
+                            (2 * broadcast_vec.value[x[0][1]][2] * broadcast_vec.value[x[1]][2])))
     
-    print("")
-    print("{} combinations with tau less than {}".format(len(resultRDD410collect), taus[1]))
+    result = result.filter(lambda x: x[1][0] <= tau.value[0] )
 
-#     print("tau: {}".format(taus[0]))
-#     # resultRDD20 = resultRDD410Cache.filter(lambda x: aggregate_variance(broadcast_vectors.value[x[0][0]], \
-#     #                                                                     broadcast_vectors.value[x[0][1]], \
-#     #                                                                     broadcast_vectors.value[x[1]]) <= tau.value[0])
+    print(result.take(10))
+    print(result.count())
 
-# #    resultRDD20 = resultRDD410Cache.filter(lambda x: np.var([np.sum(i) for i in zip(broadcast_vectors.value[x[0][0]], broadcast_vectors.value[x[0][1]], broadcast_vectors.value[x[1]])]) <= tau.value[0])
+    # resultRDD410b = resultRDD410a.filter(lambda x: aggregate_variance(x[3], x[4], x[5]) <= tau.value[0])
 
-#     # resultRDD20_ = resultRDD20.map(lambda x: (x[0][0], x[0][1], x[1], aggregate_variance(broadcast_vectors.value[x[0][0]], \
-#     #                                                                                     broadcast_vectors.value[x[0][1]], \
-#     #                                                                                     broadcast_vectors.value[x[1]])))
+    # resultRDD410 = resultRDD410b.map(lambda x: (x[0], x[1], x[2], aggregate_variance(x[3], x[4], x[5])))
 
-# #    resultRDD20_ = resultRDD20.map(lambda x: (x[0][0], x[0][1], x[1], np.var([np.sum(i) for i in zip(broadcast_vectors.value[x[0][0]], broadcast_vectors.value[x[0][1]], broadcast_vectors.value[x[1]])])))
-
-#     resultRDD20_ = resultRDD410Cache.filter(lambda x: x[3] <= tau.value[0])
-
-#     resultRDD20Collect = resultRDD20_.collect()
-
-#     print("{} combinations with tau less than {}".format(len(resultRDD20Collect), taus[0]))
-#     print("")
-
-#     for result in resultRDD20Collect:
-#         print(result)
-#     print("")
-
-    print("*****************************************")
-    print("********** Dataset 400 x 10000 **********")
-    print("*****************************************")
-    print("")
+    #print("{} combinations with tau less than {}".format(resultRDD410.count(), tau.value[0]))
 
     return
 
 
+
+
+
+def update_cms(sketch, v, w):
+    hash_val1 = hashlib.sha1(str(v).encode()).hexdigest()
+    hash_val2 = hashlib.sha256(str(v).encode()).hexdigest()
+    hash_val3 = hashlib.md5(str(v).encode()).hexdigest()
+    sketch[0][int(hash_val1, 16) % w] += 1
+    sketch[1][int(hash_val2, 16) % w] += 1
+    sketch[2][int(hash_val3, 16) % w] += 1
+
+# how to use count min sketch for representing the original vectors; then for all triples of vectors <X,Y,Z> from the dataset, estimating the aggregation of each triple, and finally, estimating the variances of each triple, inside Spark?
 def q4(spark_context: SparkContext, rdd: RDD):
-    # TODO: Implement Q4 here
+    NumPartition = 8     # for server (2 workers, each work has 40 cores, so 80 cores in total)
+    taus = [20, 410]
+    tau = spark_context.broadcast(taus)
+    vectors = rdd.collect()
+    vectors_dict = dict(vectors)
+    broadcast_vectors = spark_context.broadcast(vectors_dict) # broadcast this list of vector ID and respective elements to all executors.
+
+    # cartesian join the keys 
+    keys = rdd.keys()
+    keys2 = keys.cartesian(keys)
+    keys2 = keys2.filter(lambda x: x[0] < x[1])
+    keys3 = keys2.cartesian(keys)
+    keys3 = keys3.filter(lambda x: x[0][1] < x[1] and x[0][0] < x[1])
+
+    keyRDD = keys3.repartition(NumPartition)
+    #print("Number of partitions: ", keyRDD.getNumPartitions())
+    #print("")
+
+    print(f"vector count = {len(vectors)}")
+    print(f"vectors[0]: {vectors[0]}")
+    print(f"rdd.first(): {rdd.first()}")
+    print(f"keyRDD.first(): {keyRDD.first()}")
+
+    # f1: ε={0.001, 0.01}, δ=0.1
+    # f2: ε={0.0001, 0.001, 0.002, 0.01}, δ=0.1
+    e = 2.718
+    epsilon = 0.001
+    delta = 0.1
+    w = ceil(e / epsilon)
+    d = ceil(log(1 / delta))
+    print(f"w = {w}, d = {d}")
+    # 3 rows, 2718 cols
+    # d = 3, 3 hash functions
+
+    # sketch = np.zeros((d, w))   
+    # for v in vectors:
+    #     update_cms(sketch, v[1], w)
+    # print(sketch)
+
+
+    vectors = [v[1] for v in vectors]
+    # Convert the list of vectors into a DataFrame
+    df = SparkSession.createDataFrame([(Vectors.dense(v),) for v in vectors], ["features"])
+
     return
 
 
@@ -267,8 +287,8 @@ if __name__ == '__main__':
 
     start_time = datetime.now()
 
-#    on_server = False  # TODO: Set this to true if and only if deploying to the server
-    on_server = True
+    on_server = False  # TODO: Set this to true if and only if deploying to the server
+    #on_server = True
 
     spark_context = get_spark_context(on_server)
 
@@ -289,3 +309,4 @@ if __name__ == '__main__':
     print("***********************************************")    
 
     spark_context.stop()
+
