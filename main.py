@@ -43,25 +43,29 @@ def aggregate_variance(v1: list, v2: list, v3: list) -> float:
 
 # Computed from the required epsilon parameter
 HASH_FUNCTIONS = 3  # Count min rows
-COUNT_MIN_COLS = 2719  # Count min columns (for epsilon = 0.001)
-#COUNT_MIN_COLS = 10  # !!! TESTING ONLY !!!
+#COUNT_MIN_COLS = 27183  # Count min columns (for epsilon = 0.0001)
+#COUNT_MIN_COLS = 2719  # Count min columns (for epsilon = 0.001)
+#COUNT_MIN_COLS = 1360  # Count min columns (for epsilon = 0.002)
+#COUNT_MIN_COLS = 272  # Count min columns (for epsilon = 0.01)
 
 
 # prime values for hash function
 hash_prime = { #{index: [multiplier, addition]
-    0: [10651, 10663],
-    1: [11119, 11579],
-    2: [12703, 12829],
+#    0: [10651, 10663],
+#    1: [11119, 11579],
+#    2: [12703, 12829],
+    0: [636928, 2567793],
+    1: [909030, 4151203],
+    2: [1128352, 3152829],
 #    0: [1128352, 3152829],
 #    1: [2068697, 2587417],
 #    2: [2052571, 3764501],
 }
-#print("hash_prime: ", hash_prime[0][1])
 
-def hash_function(value: int, hash_params: int) -> int:
+def hash_function(value: int, hash_params: int, COUNT_MIN_COLS: int) -> int:
     return (hash_params[0] * int(value) + hash_params[1]) % COUNT_MIN_COLS
 
-def count_min_sketch(vec: tuple) -> tuple:
+def count_min_sketch(vec: tuple, COUNT_MIN_COLS: int) -> tuple:
     id, elem = vec
     len_elem = len(elem)
 
@@ -69,12 +73,12 @@ def count_min_sketch(vec: tuple) -> tuple:
 
     for i in range(len_elem):
         for j in range(HASH_FUNCTIONS):
-            index = hash_function(i, hash_prime[j])
+            index = hash_function(i, hash_prime[j], COUNT_MIN_COLS)
             count_min[j][index] = count_min[j][index] + elem[i]
 
     return (id, count_min)
 
-def sketch_aggregate_dot_mean(sk1: array, sk2: array, sk3: array) -> 'EX2, mean':
+def sketch_aggregate_variance(sk1: array, sk2: array, sk3: array) -> float:
     sketch_aggregate = np.array(sk1) + np.array(sk2) + np.array(sk3)
     numRowssketch, numColssketch = sketch_aggregate.shape
     sketch_aggregate_dot = []
@@ -84,8 +88,8 @@ def sketch_aggregate_dot_mean(sk1: array, sk2: array, sk3: array) -> 'EX2, mean'
     sketch_aggregate_dot_min = np.min(sketch_aggregate_dot)
     EX2 = sketch_aggregate_dot_min / 10000
     mean = np.sum(sketch_aggregate[0]) / 10000
-    mean2 = mean**2
-    return EX2, mean2
+    variance = EX2 - mean**2
+    return variance
 
 # Define a function to add two matrices
 def add_matrices(m1, m2):
@@ -268,8 +272,12 @@ def q3(spark_context: SparkContext, rdd: RDD):
 def q4(spark_context: SparkContext, rdd: RDD):
     # TODO: Implement Q4 here
 
-#    NumPartition = 32
-    NumPartition = 160     # for server (2 workers, each work has 40 cores, so 80 cores in total)
+    # functionality = 1 for aggregate variance lower than threshold (<400)
+    # functionality = 2 for aggregate variance higher than threshold (>200000 and >1000000)
+    functionality = 1
+
+    NumPartition = 32
+#    NumPartition = 160     # for server (2 workers, each work has 40 cores, so 80 cores in total)
 #    NumPartition = 240
 
     taus = [400, 200000, 1000000]
@@ -287,26 +295,86 @@ def q4(spark_context: SparkContext, rdd: RDD):
     print("Number of partitions: ", keyRDD.getNumPartitions())
     print("")
 
-    rddCountMin = rdd.map(lambda x: count_min_sketch(x))
-    rddCountMinCollect = rddCountMin.collect()
-    countMin_dict = dict(rddCountMinCollect)
+    if functionality == 1:
+        epsilon = [0.001, 0.01]
+        w = [2719, 272]   # epsilon=0.001, w=2719 & epsilon=0.01, w=272
+        for i, cols in enumerate(w):
+            COUNT_MIN_COLS = cols
+            rddCountMin = rdd.map(lambda x: count_min_sketch(x, COUNT_MIN_COLS))
+            rddCountMinCollect = rddCountMin.collect()
+            countMin_dict = dict(rddCountMinCollect)
 
-    broadcast_countMin = spark_context.broadcast(countMin_dict)
+            #broadcast_countMin.destroy()   # UnboundLocalError: local variable 'broadcast_countMin' referenced before assignment
+            broadcast_countMin = spark_context.broadcast(countMin_dict)
 
-    RDDmap = keyRDD.map(lambda x: (x[0][0], x[0][1], x[1], \
-                                broadcast_countMin.value[x[0][0]], \
-                                broadcast_countMin.value[x[0][1]], \
-                                broadcast_countMin.value[x[1]]))
-    
-    RDDEX2mean = RDDmap.map(lambda x: (x[0], x[1], x[2], sketch_aggregate_dot_mean(x[3], x[4], x[5])))
+            RDDmap = keyRDD.map(lambda x: (x[0][0], x[0][1], x[1], \
+                    broadcast_countMin.value[x[0][0]], \
+                    broadcast_countMin.value[x[0][1]], \
+                    broadcast_countMin.value[x[1]]))
+            
+            resultRDD_ = RDDmap.filter(lambda x: sketch_aggregate_variance(x[3], x[4], x[5]) <= tau.value[0])   # lower than 400
 
-    resultRDD_ = RDDEX2mean.filter(lambda x: (x[3][0]-x[3][1]) <= tau.value[1])
-    resultRDD = resultRDD_.map(lambda x: (x[0], x[1], x[2], x[3][0]-x[3][1]))
+            resultRDD = resultRDD_.map(lambda x: (x[0], x[1], x[2], sketch_aggregate_variance(x[3], x[4], x[5])))
 
-    resultRDDCollect = resultRDD.collect()
+            resultRDDCollect = resultRDD.collect()
 
-    for result in resultRDDCollect:
-        print(result)
+            print("")
+            print("=================================================================================================")
+            print("")
+
+            for result in resultRDDCollect:
+                print(result)
+
+            print("")
+            print("{} combinations with tau lower than {} with epsilon {}".format(len(resultRDDCollect), taus[0], epsilon[i]))
+
+            print("")
+            print("=================================================================================================")
+            print("")
+
+    elif functionality == 2:
+        # epsilon = 0.0001, w = 27183
+        # epsilon = 0.001,  w = 2719
+        # epsilon = 0.002,  w = 1360
+        # epsilon = 0.01,   w = 272
+        epsilon = [0.0001, 0.001, 0.002, 0.01]
+        w = [27183, 2719, 1360, 272]
+        for i, cols in enumerate(w):
+            COUNT_MIN_COLS = cols
+            rddCountMin = rdd.map(lambda x: count_min_sketch(x, COUNT_MIN_COLS))
+            rddCountMinCollect = rddCountMin.collect()
+            countMin_dict = dict(rddCountMinCollect)
+
+            broadcast_countMin = spark_context.broadcast(countMin_dict)
+
+            RDDmap = keyRDD.map(lambda x: (x[0][0], x[0][1], x[1], \
+                    broadcast_countMin.value[x[0][0]], \
+                    broadcast_countMin.value[x[0][1]], \
+                    broadcast_countMin.value[x[1]]))
+
+            resultRDD_ = RDDmap.filter(lambda x: sketch_aggregate_variance(x[3], x[4], x[5]) >= tau.value[1])   # higher than 200000
+
+            resultRDD = resultRDD_.map(lambda x: (x[0], x[1], x[2], sketch_aggregate_variance(x[3], x[4], x[5])))
+
+            resultRDDCollect = resultRDD.collect()
+
+            print("")
+            print("=================================================================================================")
+            print("")
+
+            print("{} combinations with tau higher than {} with epsilon {}".format(len(resultRDDCollect), taus[1], epsilon[i]))
+
+            num = 0
+            for result in resultRDDCollect:
+                if result[3] >= taus[2]:
+                    num += 1
+            
+            print("")
+            print("{} combinations with tau higher than {} with epsilon {}".format(len(resultRDDCollect), taus[2], epsilon[i]))
+
+            print("")
+            print("=================================================================================================")
+            print("")
 
     return
 
@@ -315,8 +383,8 @@ if __name__ == '__main__':
 
     start_time = datetime.now()
 
-#    on_server = False  # TODO: Set this to true if and only if deploying to the server
-    on_server = True
+    on_server = False  # TODO: Set this to true if and only if deploying to the server
+#    on_server = True
 
     spark_context = get_spark_context(on_server)
 
@@ -326,9 +394,9 @@ if __name__ == '__main__':
 
     # q2(spark_context, data_frame)
 
-    # q3(spark_context, rdd)
+    q3(spark_context, rdd)
 
-    q4(spark_context, rdd)
+    # q4(spark_context, rdd)
 
     end_time = datetime.now()
 
