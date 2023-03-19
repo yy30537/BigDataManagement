@@ -33,13 +33,6 @@ def q1a(spark_context: SparkContext, on_server: bool) -> DataFrame:
     df_split = df.withColumn("list", split(df['num_list'], ";"))
     df_split = df_split.withColumn("int_list", df_split['list'].cast("array<int>"))
 
-    # # make each number a new column
-    # first_row = df.first()
-    # numAttrs = len(first_row['num_list'].split(";"))
-    # attrs = spark_context.parallelize(["num_" + str(i) for i in range(numAttrs)]).zipWithIndex().collect()
-    # for name, index in attrs:
-    #     df_split = df_split.withColumn(name, df_split['list'].getItem(index).cast(IntegerType()))
-
     return df_split
 
 
@@ -86,7 +79,7 @@ def q2(spark_context: SparkContext, data_frame: DataFrame):
                     FROM data as data1, data as data2, data as data3\
                     WHERE data1.id < data2.id and data2.id < data3.id \
                 ) as agg_vector \
-            " #-, agg_array
+            "
 
 
     # final table with all variances
