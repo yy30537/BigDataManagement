@@ -76,10 +76,10 @@ def q2(spark_context: SparkContext, data_frame: DataFrame):
                 GROUP BY sorted_id \
             "
 
-    # final optimized full query
-    query4 = "SELECT sorted_id, final_var\
+    # final optimized full query, select id separately
+    query4 = "SELECT id1, id2, id3, final_var\
             FROM (\
-                SELECT sorted_id, SUM(var) + 2/10000*SUM(dot) - 2*SUM(mean_product) AS final_var \
+                SELECT first(id1) as id1, first(id2) as id2, first(id3) as id3, sorted_id, SUM(var) + 2/10000*SUM(dot) - 2*SUM(mean_product) AS final_var \
                     FROM(\
                     SELECT t2.id1 as id1, t2.id2 as id2, t1.id as id3, t2.mean_product as mean_product, t1.var as var, t2.dot as dot, \
                         concat_ws('', array_sort(array(t2.id1, t2.id2, t1.id))) as sorted_id \
