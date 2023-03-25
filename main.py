@@ -35,9 +35,9 @@ HASH_FUNCTIONS = 3  # Count min rows
 
 # Set prime values to be used as hash function parameters
 hash_prime = { #{index: [multiplier, addition]
-    0: [636928, 2567793],
-    1: [909030, 4151203],
-    2: [1128352, 3152829],
+    0: [5195977, 7865687],
+    1: [2469413, 6801089],
+    2: [7006693, 9999991],
 }
 
 def hash_function(value: int, hash_params: int, COUNT_MIN_COLS: int) -> int:
@@ -67,7 +67,7 @@ def count_min_sketch(vec: tuple, COUNT_MIN_COLS: int) -> tuple:
             count_min[j][index] = count_min[j][index] + elem[i]
     return (id, count_min)
 
-def sketch_aggregate_variance(sk1: array, sk2: array, sk3: array, epsilon: float, tau: int) -> float:
+def sketch_aggregate_variance(sk1: array, sk2: array, sk3: array, epsilon: float, tau: int, agg: float) -> float:
     '''
     Define a function to compute the variance and threshold+error of the sum of three count-min sketches
 
@@ -75,28 +75,18 @@ def sketch_aggregate_variance(sk1: array, sk2: array, sk3: array, epsilon: float
     '''
     vector_len = 10000 # Set the length of the input vectors
     sketch_aggregate = np.array(sk1) + np.array(sk2) + np.array(sk3) # Compute the sum of the three count-min sketches using element-wise addition
-    numRowssketch, numColssketch = sketch_aggregate.shape # Get the number of rows and columns in the aggregated count-min sketch
-    
+
     # Compute the dot product of each row of the aggregated count-min sketch with itself
-    sketch_aggregate_dot = []
-    # computation of variance
-    for i in range(numRowssketch):
-        dot_product = np.dot(sketch_aggregate[i], sketch_aggregate[i])
-        sketch_aggregate_dot.append(dot_product)
+    sketch_aggregate_dot = np.sum(sketch_aggregate * sketch_aggregate, axis=1)
     sketch_aggregate_dot_min = np.min(sketch_aggregate_dot) # Find the minimum dot product of all the rows
     EX2 = sketch_aggregate_dot_min / vector_len # Compute the E[X^2] term of the variance formula
     mean = np.sum(sketch_aggregate[0]) / vector_len # Compute the mean of the aggregated count-min sketch
     variance = EX2 - mean**2 # Compute the variance of the aggregated count-min sketch
 
     # Compute the threshold plus error value
-    sketch_aggregate_sum = np.sum(sketch_aggregate[0]) # Compute the sum of all the counts in the aggregated count-min sketch
-    tau_error = tau + epsilon * sketch_aggregate_sum * sketch_aggregate_sum / vector_len # Compute the threshold plus error value using the formula tau + epsilon * sum(sketch)^2 / vector_len
+    tau_error = tau + epsilon * 3*agg * 3*agg / vector_len # Compute the threshold plus error value using the formula tau + epsilon * sum(sketch)^2 / vector_len
 
     return variance, tau_error
-
-# Define a function to add two matrices
-def add_matrices(m1, m2):
-    return [[m1[i][j] + m2[i][j] for j in range(len(m1[0]))] for i in range(len(m1))]
 
 def get_spark_context(on_server) -> SparkContext:
     spark_conf = SparkConf().setAppName("2AMD15")
@@ -351,27 +341,30 @@ def q4(spark_context: SparkContext, rdd: RDD):
 
     keyRDD = keys3.repartition(NumPartition) # Repartition the RDD to the desired number of partitions
 
+    rdd_agg = rdd.map(lambda x: np.sum(x[1])).mean() # compute the aggregate of RDD
+    broadcast_rdd_agg = spark_context.broadcast([rdd_agg]) # broadcasrt the aggregate of RDD
+
     # Print some information about the RDD and the selected functionality
     print("Number of partitions: ", keyRDD.getNumPartitions())
-    print("")
-    print("functionality: ", functionality)
     print("")
 
     # If functionality = 1, calculate the aggregate variance for all pairwise combinations with tau < 400
     if functionality == 1:
+        print("functionality: ", functionality)
+        print("")
         # Set the values of epsilon and w (the parameters for the count-min sketch) and broadcast them to the worker nodes
-        # epsilon = [0.001]
-        # w = [2719]
-        epsilon = [0.01]
-        w = [272]
+        # epsilon = [0.001] # w = [2719]
+        epsilon = [0.01] #w = [272]
 #        epsilon = [0.001, 0.01]
 #        w = [2719, 272]   # epsilon=0.001, w=2719 & epsilon=0.01, w=272
 
         # For each epsilon value, calculate the count-min sketch for each row in the RDD and collect the results
         for i, ep in enumerate(epsilon):
+            print("epsilon: ", ep)
             broadcast_epsilon = spark_context.broadcast([ep]) # Broadcast the current value of epsilon to all worker nodes
             COUNT_MIN_COLS = math.ceil(math.e / ep) # Calculate the number of columns needed for the count-min sketch
             print("COUNT_MIN_COLS: ", COUNT_MIN_COLS)
+            print("")
 
             # Calculate the count-min sketch for each row in the RDD and collect the results
             rddCountMin = rdd.map(lambda x: count_min_sketch(x, COUNT_MIN_COLS))
@@ -386,41 +379,37 @@ def q4(spark_context: SparkContext, rdd: RDD):
                                             sketch_aggregate_variance(broadcast_countMin.value[x[0][0]], \
                                             broadcast_countMin.value[x[0][1]], \
                                             broadcast_countMin.value[x[1]], \
-                                            broadcast_epsilon.value[0], tau.value[0])))
+                                            broadcast_epsilon.value[0], tau.value[0], broadcast_rdd_agg.value[0]))) #<400
 
             RDDfilter = RDDmap_.filter(lambda x: x[3][0] <= x[3][1])
 
             # Collect and print the results
             resultRDDCollect = RDDfilter.collect()
 
+            print("")
             print("{} combinations with tau lower than {} with epsilon {}".format(len(resultRDDCollect), taus[0], ep))
 
+    # If functionality = 2, calculate the aggregate variance for all pairwise combinations with tau > 200000 or tau > 1000000
     elif functionality == 2:
-        # If functionality = 2, calculate the aggregate variance for all pairwise combinations with tau > 200000 or tau > 1000000
+        print("functionality: ", functionality)
+        print("")
 
-
-        # epsilon = 0.0001, w = 27183
-        # epsilon = 0.001,  w = 2719
-        # epsilon = 0.002,  w = 1360
-        # epsilon = 0.01,   w = 272
-
-        # epsilon = [0.0001]
-        # w = [27183]
-        # epsilon = [0.001]
-        # w = [2719]
-        # epsilon = [0.002]
-        # w = [1360]
-        epsilon = [0.01]
-        w = [272]
+        # epsilon = [0.0001] #w = [27183]
+        # epsilon = [0.001] # w = [2719]
+        # epsilon = [0.002] # w = [1360]
+        epsilon = [0.01] # w = [272]
 
         # epsilon = [0.0001, 0.001, 0.002, 0.01]
         # w = [27183, 2719, 1360, 272]
 
         # For each epsilon value, calculate the count-min sketch for each row in the RDD and collect the results
         for i, ep in enumerate(epsilon):
+            print("epsilon: ", ep)
             broadcast_epsilon = spark_context.broadcast([ep]) # Broadcast the current value of epsilon to all worker nodes
             COUNT_MIN_COLS = math.ceil(math.e / ep) # Calculate the number of columns needed for the count-min sketch
             print("COUNT_MIN_COLS: ", COUNT_MIN_COLS)
+            print("")
+
             rddCountMin = rdd.map(lambda x: count_min_sketch(x, COUNT_MIN_COLS)) # Calculate the count-min sketch for each row in the RDD and collect the results
             rddCountMinCollect = rddCountMin.collect()
             countMin_dict = dict(rddCountMinCollect) # Convert the results to a dictionary
@@ -433,17 +422,15 @@ def q4(spark_context: SparkContext, rdd: RDD):
                                             sketch_aggregate_variance(broadcast_countMin.value[x[0][0]], \
                                             broadcast_countMin.value[x[0][1]], \
                                             broadcast_countMin.value[x[1]], \
-                                            broadcast_epsilon.value[0], tau.value[1]))) # tau=[400, 200000, 1000000]
+                                            broadcast_epsilon.value[0], tau.value[1], broadcast_rdd_agg.value[0])))
+                                            # tau=[400, 200000, 1000000]
 
             RDDfilter = RDDmap_.filter(lambda x: x[3][0] >= x[3][1])
 
             # Collect and print the results
             resultRDDCollect = RDDfilter.collect()
-            for i, result in enumerate(resultRDDCollect):
-                print(result)
-                if i > 50:
-                    break
 
+            print("")
             print("{} combinations with tau higher than {} with epsilon {}".format(len(resultRDDCollect), taus[1], ep))
 
     return
