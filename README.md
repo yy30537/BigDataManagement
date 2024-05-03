@@ -1,2 +1,2 @@
-# BigDataManagement
-Course Project
+# Big Data Management Term Project
+
